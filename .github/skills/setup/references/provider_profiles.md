@@ -8,7 +8,7 @@ Quick reference for supported provider configurations.
 ```yaml
 llm:
   provider: "openai"
-  model: "gpt-4o"           # or gpt-4o-mini, gpt-3.5-turbo
+  model: "gpt-4o"           # or gpt-4.1, gpt-4o-mini, gpt-5 (newer but less universally available)
   api_key: "<OPENAI_API_KEY>"
   temperature: 0.0
   max_tokens: 4096
@@ -16,14 +16,16 @@ llm:
 Required fields: `provider`, `model`, `api_key`
 Remove/leave empty: `azure_endpoint`, `deployment_name`, `api_version`
 
+> **Model selection**: `gpt-5` for best quality, `gpt-5-mini` for cost/performance, `gpt-4o` for maximum stability.
+
 ### Azure OpenAI
 ```yaml
 llm:
   provider: "azure"
-  model: "gpt-4o"
+  model: "gpt-4o"          # or gpt-4o-mini, gpt-5 (must match your deployment)
   deployment_name: "<YOUR_DEPLOYMENT>"
   azure_endpoint: "https://<RESOURCE>.openai.azure.com/"
-  api_version: "2024-02-15-preview"
+  api_version: "2025-06-01"
   api_key: "<AZURE_API_KEY>"
   temperature: 0.0
   max_tokens: 4096
@@ -34,22 +36,27 @@ Required fields: all shown above
 ```yaml
 llm:
   provider: "deepseek"
-  model: "deepseek-chat"
+  model: "deepseek-v4-flash"   # or deepseek-v4-pro (higher quality, slower)
   api_key: "<DEEPSEEK_API_KEY>"
   temperature: 0.0
   max_tokens: 4096
 ```
 
+> ⚠️ **Migration notice** (2026-07-24): DeepSeek has retired `deepseek-chat` and `deepseek-reasoner`.
+> Replace `deepseek-chat` → `deepseek-v4-flash`. For reasoning, use `deepseek-v4-flash`
+> with `thinking: {type: enabled}` or switch to `deepseek-v4-pro`.
+> Both V4 models support 1M context (8× the old V3.2 limit).
+
 ### Ollama (local)
 ```yaml
 llm:
   provider: "ollama"
-  model: "llama3"            # or any model pulled via `ollama pull`
+  model: "llama3.1"          # or llama4:scout, qwen3:8b, gemma4:12b
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 4096
 ```
-No API key required.
+No API key required. Pull model first: `ollama pull llama4:scout`
 
 ## Embedding Providers
 
@@ -57,8 +64,8 @@ No API key required.
 ```yaml
 embedding:
   provider: "openai"
-  model: "text-embedding-ada-002"   # or text-embedding-3-small
-  dimensions: 1536                   # 1536 for ada-002, 1536 for 3-small
+  model: "text-embedding-3-small"     # or text-embedding-3-large (3072d), text-embedding-ada-002 (legacy)
+  dimensions: 1536                     # small: 512-1536, large: 256-3072 (Matryoshka)
   api_key: "<OPENAI_API_KEY>"
 ```
 
@@ -66,11 +73,11 @@ embedding:
 ```yaml
 embedding:
   provider: "azure"
-  model: "text-embedding-ada-002"
+  model: "text-embedding-3-small"
   dimensions: 1536
   deployment_name: "<YOUR_EMBEDDING_DEPLOYMENT>"
   azure_endpoint: "https://<RESOURCE>.openai.azure.com/"
-  api_version: "2024-02-15-preview"
+  api_version: "2025-06-01"
   api_key: "<AZURE_API_KEY>"
 ```
 
@@ -92,7 +99,7 @@ embedding:
 ```yaml
 llm:
   provider: "qwen"
-  model: "qwen-turbo"         # or qwen-plus, qwen-max
+  model: "qwen3.7-flash"      # or qwen3.7-max (best reasoning), qwen3.6-plus (multimodal)
   api_key: "<DASHSCOPE_API_KEY>"
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   temperature: 0.0
@@ -107,14 +114,15 @@ embedding:
   api_key: "<DASHSCOPE_API_KEY>"
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
-Vision model: `qwen-vl-max`
+Vision model: `qwen3-vl-32b-thinking` (flagship), `qwen3.7-plus` (multimodal text+image+video)
 SDK: `pip install openai` (uses OpenAI-compatible protocol)
+International endpoint also available: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1`
 
 ### Gemini (Google AI Studio)
 ```yaml
 llm:
   provider: "gemini"
-  model: "gemini-2.0-flash"   # or gemini-1.5-pro, gemini-2.0-flash-lite
+  model: "gemini-3.6-flash"   # or gemini-3.5-flash, gemini-3.5-pro (heavier reasoning)
   api_key: "<GEMINI_API_KEY>"
   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
   temperature: 0.0
@@ -129,20 +137,76 @@ embedding:
   api_key: "<GEMINI_API_KEY>"
   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 ```
-Vision model: `gemini-2.0-flash`
+Vision models: all Gemini 3.x models are natively multimodal. `gemini-3.6-flash` recommended.
+SDK: `pip install openai` (uses OpenAI-compatible protocol)
+
+### Groq
+```yaml
+llm:
+  provider: "groq"
+  model: "llama-3.3-70b"      # or mixtral-8x7b, gemma2-9b-it (see Groq docs for latest)
+  api_key: "<GROQ_API_KEY>"
+  base_url: "https://api.groq.com/openai/v1"
+  temperature: 0.0
+  max_tokens: 4096
+```
+No embedding endpoint. Vision: `llama-3.2-90b-vision-preview`.
+SDK: `pip install openai` (uses OpenAI-compatible protocol)
+
+### Mistral
+```yaml
+llm:
+  provider: "mistral"
+  model: "mistral-large-latest"  # or mistral-small-latest, codestral-latest
+  api_key: "<MISTRAL_API_KEY>"
+  base_url: "https://api.mistral.ai/v1"
+  temperature: 0.0
+  max_tokens: 4096
+```
+Embedding:
+```yaml
+embedding:
+  provider: "mistral"
+  model: "mistral-embed"
+  dimensions: 1024
+  api_key: "<MISTRAL_API_KEY>"
+  base_url: "https://api.mistral.ai/v1"
+```
+SDK: `pip install openai` (uses OpenAI-compatible protocol)
+
+### Together AI
+```yaml
+llm:
+  provider: "together"
+  model: "meta-llama/Llama-3.3-70B-Instruct-Turbo"  # see Together docs for full catalog
+  api_key: "<TOGETHER_API_KEY>"
+  base_url: "https://api.together.xyz/v1"
+  temperature: 0.0
+  max_tokens: 4096
+```
+Embedding:
+```yaml
+embedding:
+  provider: "together"
+  model: "togethercomputer/m2-bert-80M-8k-retrieval"
+  dimensions: 768
+  api_key: "<TOGETHER_API_KEY>"
+  base_url: "https://api.together.xyz/v1"
+```
 SDK: `pip install openai` (uses OpenAI-compatible protocol)
 
 ## Model → Dimensions Lookup
 
-| Model                           | Dimensions |
-|---------------------------------|------------|
-| text-embedding-ada-002          | 1536       |
-| text-embedding-3-small          | 1536       |
-| text-embedding-3-large          | 3072       |
-| nomic-embed-text (Ollama)       | 768        |
-| mxbai-embed-large (Ollama)      | 1024       |
-| text-embedding-v3 (Qwen)        | 1024       |
-| text-embedding-004 (Gemini)     | 768        |
+| Model                           | Dimensions | Notes |
+|---------------------------------|------------|-------|
+| text-embedding-3-small          | 1536 (512–1536) | Matryoshka — variable dims supported |
+| text-embedding-3-large          | 3072 (256–3072) | Matryoshka — 256d still beats ada-002 |
+| text-embedding-ada-002 (legacy) | 1536       | Not recommended for new projects |
+| nomic-embed-text (Ollama)       | 768        | |
+| mxbai-embed-large (Ollama)      | 1024       | |
+| text-embedding-v3 (Qwen)        | 1024       | |
+| text-embedding-004 (Gemini)     | 768        | |
+| mistral-embed (Mistral)         | 1024       | |
 
 ## Vision LLM Providers
 
@@ -152,25 +216,22 @@ Vision uses a **separate config section** (`vision_llm`) with its own `provider`
 
 | Provider | Model | Quality | Speed | Cost | Notes |
 |----------|-------|---------|-------|------|-------|
-| OpenAI | `gpt-4o` | ⭐⭐⭐⭐⭐ | Fast | $$ | 推荐，综合最优 |
-| OpenAI | `gpt-4o-mini` | ⭐⭐⭐⭐ | Very Fast | $ | 性价比高，适合简单图片 |
-| OpenAI | `gpt-4-turbo` | ⭐⭐⭐⭐⭐ | Medium | $$$ | 老牌高质量，成本较高 |
-| Azure | `gpt-4o` | ⭐⭐⭐⭐⭐ | Fast | $$ | 同 OpenAI，需 Azure 部署 |
-| Azure | `gpt-4o-mini` | ⭐⭐⭐⭐ | Very Fast | $ | 同上，轻量版 |
-| Ollama | `llava` (7B) | ⭐⭐⭐ | Medium | Free | 本地部署，无需 API Key |
-| Ollama | `llava:13b` | ⭐⭐⭐⭐ | Slow | Free | 质量更好，需更多显存 |
-| Ollama | `llava:34b` | ⭐⭐⭐⭐⭐ | Very Slow | Free | 本地最高质量，需 24GB+ 显存 |
-| Ollama | `llava-llama3` | ⭐⭐⭐⭐ | Medium | Free | 基于 LLaMA3，综合较好 |
-| Ollama | `bakllava` | ⭐⭐⭐ | Medium | Free | BakLLaVA，轻量替代 |
+| OpenAI | `gpt-5` | ⭐⭐⭐⭐⭐ | Fast | $$ | 推荐，最新旗舰多模态 |
+| OpenAI | `gpt-5-mini` | ⭐⭐⭐⭐ | Very Fast | $ | 性价比高，适合简单图片 |
+| OpenAI | `gpt-4o` | ⭐⭐⭐⭐⭐ | Fast | $$ | 稳定可靠，综合优秀 |
+| Azure | `gpt-5` | ⭐⭐⭐⭐⭐ | Fast | $$ | 同 OpenAI，需 Azure 部署 |
+| Azure | `gpt-4o` | ⭐⭐⭐⭐⭐ | Fast | $$ | 稳定版本 |
+| Ollama | `llama4:scout` | ⭐⭐⭐⭐⭐ | Medium | Free | 原生多模态 MoE，10M 上下文 |
+| Ollama | `qwen3-vl:8b` | ⭐⭐⭐⭐ | Fast | Free | 最佳开源视觉，擅截图/UI |
+| Ollama | `gemma4:12b` | ⭐⭐⭐⭐ | Fast | Free | Google 开源多模态 |
+| Ollama | `llava:13b` | ⭐⭐⭐⭐ | Slow | Free | 经典选择，需更多显存 |
 | Ollama | `moondream` | ⭐⭐ | Very Fast | Free | 最轻量（1.6B），资源占用极少 |
-| Qwen | `qwen-vl-max` | ⭐⭐⭐⭐⭐ | Medium | $$ | 通义千问视觉旗舰 |
-| Qwen | `qwen-vl-plus` | ⭐⭐⭐⭐ | Fast | $ | 性价比高 |
-| Qwen | `qwen2.5-vl-72b-instruct` | ⭐⭐⭐⭐⭐ | Slow | $$ | 最新高质量模型 |
-| Qwen | `qwen2.5-vl-7b-instruct` | ⭐⭐⭐ | Fast | $ | 轻量版 |
-| Gemini | `gemini-2.0-flash` | ⭐⭐⭐⭐⭐ | Very Fast | $ | 推荐，速度快质量高 |
-| Gemini | `gemini-1.5-pro` | ⭐⭐⭐⭐⭐ | Slow | $$$ | 最高质量，适合复杂图片 |
-| Gemini | `gemini-2.0-flash-lite` | ⭐⭐⭐ | Very Fast | ¢ | 极低成本 |
-| Gemini | `gemini-1.5-flash` | ⭐⭐⭐⭐ | Fast | $ | 均衡之选 |
+| Qwen | `qwen3-vl-32b-thinking` | ⭐⭐⭐⭐⭐ | Medium | $$ | 通义千问视觉推理旗舰 |
+| Qwen | `qwen3.7-plus` | ⭐⭐⭐⭐ | Fast | $ | 多模态（text+image+video），性价比高 |
+| Gemini | `gemini-3.6-flash` | ⭐⭐⭐⭐⭐ | Very Fast | $ | 推荐，最新最高效 |
+| Gemini | `gemini-3.5-flash` | ⭐⭐⭐⭐⭐ | Fast | $ | 均衡之选 |
+| Gemini | `gemini-3.5-pro` | ⭐⭐⭐⭐⭐ | Slow | $$$ | 最高质量，适合复杂图片 |
+| Gemini | `gemini-3.5-flash-lite` | ⭐⭐⭐ | Very Fast | ¢ | 极低成本 |
 | DeepSeek | — | — | — | — | ❌ 不支持 Vision，需选其他 provider |
 
 ### OpenAI Vision
@@ -178,7 +239,7 @@ Vision uses a **separate config section** (`vision_llm`) with its own `provider`
 vision_llm:
   enabled: true
   provider: "openai"
-  model: "gpt-4o"  # or: gpt-4o-mini, gpt-4-turbo
+  model: "gpt-5"  # or: gpt-5-mini, gpt-4o
   api_key: "<OPENAI_API_KEY>"
   max_image_size: 2048
 ```
@@ -188,10 +249,10 @@ vision_llm:
 vision_llm:
   enabled: true
   provider: "azure"
-  model: "gpt-4o"  # or: gpt-4o-mini, gpt-4-turbo
+  model: "gpt-5"  # or: gpt-4o (must match your deployment)
   deployment_name: "<YOUR_VISION_DEPLOYMENT>"
   azure_endpoint: "https://<RESOURCE>.openai.azure.com/"
-  api_version: "2024-02-15-preview"
+  api_version: "2025-06-01"
   api_key: "<AZURE_API_KEY>"
   max_image_size: 2048
 ```
@@ -201,7 +262,7 @@ vision_llm:
 vision_llm:
   enabled: true
   provider: "ollama"
-  model: "llava"  # or: llava:13b, llava:34b, llava-llama3, bakllava, moondream
+  model: "llama4:scout"  # or: qwen3-vl:8b, gemma4:12b, llava:13b
   base_url: "http://localhost:11434"
   max_image_size: 2048
 ```
@@ -211,7 +272,7 @@ vision_llm:
 vision_llm:
   enabled: true
   provider: "qwen"
-  model: "qwen-vl-max"  # or: qwen-vl-plus, qwen2.5-vl-72b-instruct, qwen2.5-vl-7b-instruct
+  model: "qwen3.7-plus"  # or: qwen3-vl-32b-thinking, qwen3.6-plus
   api_key: "<DASHSCOPE_API_KEY>"
   base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
   max_image_size: 2048
@@ -222,7 +283,18 @@ vision_llm:
 vision_llm:
   enabled: true
   provider: "gemini"
-  model: "gemini-2.0-flash"  # or: gemini-1.5-pro, gemini-2.0-flash-lite, gemini-1.5-flash
+  model: "gemini-3.6-flash"  # or: gemini-3.5-flash, gemini-3.5-pro
+  api_key: "<GEMINI_API_KEY>"
+  base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  max_image_size: 2048
+```
+
+### Vision Disabled
+```yaml
+vision_llm:
+  enabled: false
+  provider: "openai"
+  model: "gpt-5"
   api_key: "<GEMINI_API_KEY>"
   base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
   max_image_size: 2048

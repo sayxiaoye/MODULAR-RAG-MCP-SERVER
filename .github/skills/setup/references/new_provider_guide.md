@@ -145,10 +145,10 @@ Check `src/core/settings.py` — `LLMSettings` and `EmbeddingSettings` already h
 
 ## Step 6: Install SDK (if any)
 
-Most OpenAI-compatible providers only need `pip install openai` (already installed).
+Most OpenAI-compatible providers only need `python -m pip install openai` (already installed).
 Provider-specific SDKs if NOT OpenAI-compatible:
-- Qwen: `pip install dashscope` (alternative, but OpenAI-compat mode recommended)
-- Gemini: `pip install google-generativeai` (only if NOT using OpenAI-compat mode)
+- Qwen: `python -m pip install dashscope` (alternative, but OpenAI-compat mode recommended)
+- Gemini: `python -m pip install google-generativeai` (only if NOT using OpenAI-compat mode)
 
 ## Provider-Specific Reference
 

@@ -17,6 +17,13 @@ Preflight → Ask User → Generate Config → Install Deps → Validate → Lau
 
 > Auto-fix loop: if any step fails, diagnose → fix → retry (≤3 rounds).
 
+### Operating Defaults
+
+- Always use the active Python interpreter consistently via `python -m pip` and `python -c`.
+- Prefer environment variables for secrets whenever possible; only write credentials into `config/settings.yaml` if the user explicitly allows it.
+- Make repeated runs idempotent: back up existing config before overwriting and reuse prior values when available.
+- Handle Windows/macOS/Linux activation separately and verify the interpreter path before installing packages.
+
 ---
 
 ## Step 1: Preflight Checks
@@ -45,8 +52,10 @@ Test-Path ".venv"
 python -m venv .venv --without-pip
 
 # Step 3: Activate the virtual environment
-# Windows:
+# Windows (PowerShell):
 .\.venv\Scripts\Activate.ps1
+# Windows (cmd):
+# .\.venv\Scripts\activate.bat
 # macOS/Linux:
 # source .venv/bin/activate
 
@@ -54,7 +63,8 @@ python -m venv .venv --without-pip
 python -m ensurepip --upgrade
 
 # Step 5: Verify
-pip --version             # Should show pip path inside .venv
+python -m pip --version  # Should show pip path inside .venv
+python -c "import sys; print(sys.executable)"  # Should point inside .venv
 ```
 
 If `.venv` already exists, only run Step 3 (activate) and Step 5 (verify).
@@ -70,12 +80,12 @@ Use the `ask_questions` tool to gather provider choices. Ask in batches (max 4 q
 Ask these questions together:
 
 1. **LLM Provider** — Which LLM provider?
-   - Options: `OpenAI`, `Azure OpenAI`, `DeepSeek`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`
+   - Options: `OpenAI`, `Azure OpenAI`, `DeepSeek`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Groq`, `Together AI`
    - Recommended: `OpenAI`
    - Built-in: OpenAI, Azure, DeepSeek, Ollama. Others require auto-scaffolding (see Step 2.5).
 
 2. **Embedding Provider** — Which embedding provider?
-   - Options: `OpenAI`, `Azure OpenAI`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`
+   - Options: `OpenAI`, `Azure OpenAI`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Together AI`
    - Recommended: `OpenAI` (should match LLM provider when possible)
    - Built-in: OpenAI, Azure, Ollama. Others require auto-scaffolding (see Step 2.5).
 
@@ -92,10 +102,12 @@ Ask these questions together:
 
 Ask for credentials based on selected providers. Refer to [references/provider_profiles.md](references/provider_profiles.md) for required fields per provider.
 
+For each secret, prefer asking whether to store it in an environment variable or in `config/settings.yaml`; recommend environment variables for API keys and keep YAML minimal.
+
 **If OpenAI selected:**
 - Ask: OpenAI API Key
-- Ask: LLM model (default: `gpt-4o`)
-- Ask: Embedding model (default: `text-embedding-ada-002`)
+- Ask: LLM model (default: `gpt-5`; `gpt-4o` for maximum stability)
+- Ask: Embedding model (default: `text-embedding-3-small`)
 
 **If Azure OpenAI selected:**
 - Ask: Azure API Key
@@ -109,19 +121,19 @@ Ask for credentials based on selected providers. Refer to [references/provider_p
 
 **If Ollama selected:**
 - Ask: Ollama base URL (default: `http://localhost:11434`)
-- Ask: LLM model name (default: `llama3`)
+- Ask: LLM model name (default: `llama4:scout`)
 - Ask: Embedding model name (default: `nomic-embed-text`)
 - Verify Ollama is running: `curl http://localhost:11434/api/tags` or equivalent
 
 **If Qwen selected:**
 - Ask: Qwen API Key (DashScope)
-- Ask: LLM model (default: `qwen-turbo`)
+- Ask: LLM model (default: `qwen3.7-flash`)
 - Ask: Embedding model (default: `text-embedding-v3`) — if Qwen also chosen for embedding
 - Base URL: `https://dashscope.aliyuncs.com/compatible-mode/v1` (OpenAI-compatible)
 
 **If Gemini selected:**
 - Ask: Gemini API Key (Google AI Studio)
-- Ask: LLM model (default: `gemini-2.0-flash`)
+- Ask: LLM model (default: `gemini-3.6-flash`)
 - Ask: Embedding model (default: `text-embedding-004`) — if Gemini also chosen for embedding
 - Base URL: `https://generativelanguage.googleapis.com/v1beta/openai/` (OpenAI-compatible)
 
@@ -145,11 +157,11 @@ Vision models per provider (recommended model listed first):
 
 | Provider | Recommended | Other Options | Notes |
 |----------|------------|---------------|-------|
-| OpenAI | `gpt-4o` | `gpt-4o-mini`, `gpt-4-turbo` | gpt-4o-mini 更便宜，适合简单图片描述 |
-| Azure | `gpt-4o` | `gpt-4o-mini`, `gpt-4-turbo` | 需要 deployment_name + azure_endpoint |
-| Ollama | `llava` | `llava:13b`, `llava:34b`, `llava-llama3`, `bakllava`, `moondream` | moondream 最轻量，llava:34b 质量最高 |
-| Qwen | `qwen-vl-max` | `qwen-vl-plus`, `qwen2.5-vl-72b-instruct`, `qwen2.5-vl-7b-instruct` | qwen-vl-plus 性价比高 |
-| Gemini | `gemini-2.0-flash` | `gemini-1.5-pro`, `gemini-2.0-flash-lite`, `gemini-1.5-flash` | gemini-1.5-pro 质量最高但较慢 |
+| OpenAI | `gpt-5` | `gpt-5-mini`, `gpt-4o` | gpt-5-mini 更便宜，gpt-4o 最稳定 |
+| Azure | `gpt-5` | `gpt-4o` | 需要 deployment_name + azure_endpoint |
+| Ollama | `llama4:scout` | `qwen3-vl:8b`, `gemma4:12b`, `llava:13b` | llama4:scout 原生多模态 10M 上下文，qwen3-vl 最佳开源视觉 |
+| Qwen | `qwen3.7-plus` | `qwen3-vl-32b-thinking` | qwen3.7-plus 多模态性价比高，vl-32b 视觉推理旗舰 |
+| Gemini | `gemini-3.6-flash` | `gemini-3.5-flash`, `gemini-3.5-pro` | 3.6-flash 最新最高效，3.5-pro 质量最高但较慢 |
 | DeepSeek | ❌ 无 Vision 模型 | — | 需选择其他 provider 作为 Vision LLM |
 
 ---
@@ -186,6 +198,8 @@ Key rules:
 
 Write the generated config to `config/settings.yaml`.
 
+Before writing, if `config/settings.yaml` already exists, copy it to `config/settings.yaml.bak` first. Then generate a merged config rather than blindly overwriting the previous file.
+
 Also ensure required directories exist:
 
 ```powershell
@@ -197,13 +211,13 @@ python -c "from pathlib import Path; [Path(d).mkdir(parents=True, exist_ok=True)
 ## Step 4: Install Dependencies
 
 ```powershell
-pip install -e ".[dev]"
+python -m pip install -e ".[dev]"
 ```
 
 If specific providers need extra packages:
-- **Cross-Encoder rerank**: `pip install sentence-transformers`
-- **Streamlit dashboard**: `pip install streamlit`
-- **OpenAI**: `pip install openai`
+- **Cross-Encoder rerank**: `python -m pip install sentence-transformers`
+- **Streamlit dashboard**: `python -m pip install streamlit`
+- **OpenAI**: `python -m pip install openai`
 
 Verify critical imports:
 
@@ -222,6 +236,8 @@ Test that the config loads correctly:
 ```powershell
 python -c "from src.core.settings import load_settings; s = load_settings(); print(f'Config OK: LLM={s.llm.provider}/{s.llm.model}, Embed={s.embedding.provider}/{s.embedding.model}')"
 ```
+
+If the config loads, perform a lightweight provider initialization check when credentials are present. If available, attempt to instantiate the selected provider class or run a minimal request probe; if that fails, treat it as a credential/network issue and continue to the auto-fix loop.
 
 If this fails, enter **auto-fix loop**:
 
