@@ -1,0 +1,3 @@
+Describe the image in detail for retrieval. Focus on visible text, objects, and context.
+
+Image context: {context}

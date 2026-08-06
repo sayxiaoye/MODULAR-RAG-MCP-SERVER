@@ -1,0 +1,8 @@
+Rank the following passages by relevance to the query.
+
+Query: {query}
+
+Passages:
+{passages}
+
+Return the ranked passage indices.

@@ -1,0 +1,3 @@
+Clean and refine the following text chunk. Remove noise (headers/footers/excess whitespace) while preserving meaning and structure.
+
+{text}
