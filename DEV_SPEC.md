@@ -1959,7 +1959,7 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| B1 | LLM 抽象接口与工厂 | [ ] | | |
+| B1 | LLM 抽象接口与工厂 | [x] | 2026-08-06 | BaseLLM + LLMFactory + 5个单元测试 |
 | B2 | Embedding 抽象接口与工厂 | [ ] | | |
 | B3 | Splitter 抽象接口与工厂 | [ ] | | |
 | B4 | VectorStore 抽象接口与工厂 | [ ] | | |
@@ -2139,7 +2139,7 @@ dashboard:
 
 ## 阶段 B：Libs 可插拔层（目标：Factory 可工作，且至少有“默认后端”可跑通端到端）
 
-### B1：LLM 抽象接口与工厂
+### B1：LLM 抽象接口与工厂 ✅
 - **目标**：定义 `BaseLLM` 与 `LLMFactory`，支持按配置选择 provider。
 - **修改文件**：
   - `src/libs/llm/base_llm.py`

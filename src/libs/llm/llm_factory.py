@@ -1,0 +1,64 @@
+"""LLM 工厂：按 settings.llm.provider 路由到具体 BaseLLM 实现。"""
+
+from __future__ import annotations
+
+from typing import Callable, Dict, Type
+
+from core.settings import LLMSettings, Settings
+from libs.llm.base_llm import BaseLLM, LLMError
+
+
+class LLMFactoryError(LLMError):
+    """工厂无法解析或创建 Provider 时抛出。"""
+
+
+# Provider 名称 -> 实现类的注册表，B7 阶段注册真实后端
+_LLM_REGISTRY: Dict[str, Type[BaseLLM]] = {}
+
+
+def register_llm_provider(name: str, implementation: Type[BaseLLM]) -> None:
+    """注册 LLM Provider 实现，供扩展与测试注入 Fake 后端。"""
+    key = name.strip().lower()
+    if not key:
+        raise LLMFactoryError("Provider 名称不能为空")
+    _LLM_REGISTRY[key] = implementation
+
+
+def _default_constructor(settings: LLMSettings) -> BaseLLM:
+    """根据 LLMSettings 选择已注册的实现并实例化。"""
+    provider = settings.provider.strip().lower()
+    if provider not in _LLM_REGISTRY:
+        known = ", ".join(sorted(_LLM_REGISTRY)) or "（无）"
+        raise LLMFactoryError(
+            f"未知的 LLM provider: {settings.provider!r}，已注册: {known}"
+        )
+    return _LLM_REGISTRY[provider](settings)
+
+
+class LLMFactory:
+    """按配置创建 BaseLLM 实例的工厂入口。"""
+
+    _constructor: Callable[[LLMSettings], BaseLLM] = _default_constructor
+
+    @classmethod
+    def create(cls, settings: Settings) -> BaseLLM:
+        """
+        从 Settings 读取 llm 配置并创建对应 Provider 实例。
+
+        Args:
+            settings: 项目全局配置，使用其中的 llm 段。
+
+        Returns:
+            已配置的 BaseLLM 实现。
+        """
+        return cls._constructor(settings.llm)
+
+    @classmethod
+    def set_constructor(cls, constructor: Callable[[LLMSettings], BaseLLM]) -> None:
+        """测试专用：替换默认构造逻辑（例如注入 Fake 路由）。"""
+        cls._constructor = constructor
+
+    @classmethod
+    def reset_constructor(cls) -> None:
+        """恢复默认构造逻辑。"""
+        cls._constructor = _default_constructor
