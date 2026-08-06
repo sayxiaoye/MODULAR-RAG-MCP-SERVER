@@ -27,6 +27,7 @@ retrieval:
 rerank:
   enabled: false
   provider: none
+  model: none
   top_k: 5
 
 evaluation:

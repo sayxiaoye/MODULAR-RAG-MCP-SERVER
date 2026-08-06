@@ -43,7 +43,7 @@
 |---------|---------|------|---------|------|
 | A1 | 初始化目录树与最小可运行入口 | [x] | 2026-08-06 | 目录结构、配置文件、main.py 已创建 |
 | A2 | 引入 pytest 并建立测试目录约定 | [x] | 2026-08-06 | pytest 配置、tests/ 目录结构、26 个冒烟测试 |
-| A3 | 配置加载与校验（Settings） | [ ] | | |
+| A3 | 配置加载与校验（Settings） | [x] | 2026-08-06 | 配置加载、校验与单元测试 |
 
 #### 阶段 B：Libs 可插拔层
 
@@ -208,7 +208,7 @@
   - 至少 1 个冒烟测试（例如 `tests/unit/test_smoke_imports.py` 只做关键包 import 校验）。
 - **测试方法**：`pytest -q tests/unit/test_smoke_imports.py`。
 
-### A3：配置加载与校验（Settings）
+### A3：配置加载与校验（Settings） ✅
 - **目标**：实现读取 `config/settings.yaml` 的配置加载器，并在启动时校验关键字段存在。
 - **修改文件**：
   - `main.py`（启动时调用 `load_settings()`，缺字段直接 fail-fast 退出）
