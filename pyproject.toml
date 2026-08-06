@@ -23,14 +23,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+addopts = "-q"
 markers = [
-    "unit: Unit tests (fast, no external dependencies)",
-    "integration: Integration tests (may require external services)",
-    "e2e: End-to-end tests (full system tests)",
-    "llm: Tests that require real LLM API calls (deselect with '-m \"not llm\"')",
-    "slow: Slow tests that should be run less frequently",
+    "unit: 单元测试（隔离外部依赖，快速反馈）",
+    "integration: 集成测试（多模块协作）",
+    "e2e: 端到端测试（完整业务流程）",
 ]
-addopts = "-q --tb=short"
