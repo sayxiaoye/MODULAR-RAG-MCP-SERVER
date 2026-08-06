@@ -1,6 +1,6 @@
 ---
 name: auto-coder
-description: Autonomous spec-driven development agent. Syncs DEV_SPEC.md into chapter-based reference files, identifies the next pending task from the schedule, implements code following spec architecture and patterns, runs tests with up to 3 auto-fix rounds, and persists progress with atomic commits. Use when user says "auto code", "自动开发", "自动写代码", "auto dev", "一键开发", "autopilot", or wants fully automated spec-to-code workflow.
+description: Autonomous spec-driven development agent. Syncs DEV_SPEC.md into chapter-based reference files, identifies the next pending task from the schedule, implements code following spec architecture and patterns (with Chinese comments for readability), runs tests with up to 3 auto-fix rounds, and persists progress with atomic commits. Use when user says "auto code", "自动开发", "自动写代码", "auto dev", "一键开发", "autopilot", or wants fully automated spec-to-code workflow.
 ---
 
 # Auto Coder
@@ -81,12 +81,49 @@ Quick-check predecessor artifacts exist (file-level only). On mismatch, log a wa
    - Treat spec as single source of truth
    - Use `config/settings.yaml` values, never hardcode
    - Match existing codebase patterns and style
+   - **Add Chinese comments** so readers can quickly grasp intent (see below)
 
 5. **Write tests** alongside code:
    - Place in `tests/unit/` or `tests/integration/` per spec
    - Mock external deps in unit tests
 
-6. **Self-review** before running tests: verify all planned files exist and tests import correctly.
+6. **Self-review** before running tests: verify all planned files exist, tests import correctly, and new/changed code includes Chinese comments per the rules below.
+
+#### Chinese Comment Rules (生成代码时必须遵守)
+
+Generated **production code** and **tests** must include **Chinese** explanations. Goal: a reader can understand *what* each unit does and *why* non-obvious logic exists, without reading the spec.
+
+| Scope | Requirement |
+|-------|-------------|
+| **Module / file** | Top-of-file docstring (or module comment): 模块职责、在架构中的位置、主要对外接口 |
+| **Class** | Class docstring: 类的用途、核心属性/方法、与 spec 中哪块功能对应 |
+| **Public function / method** | Docstring: 功能说明、`Args` / `Returns` / `Raises`（如有）、关键副作用 |
+| **Non-obvious logic** | Inline `#` comments: 分支原因、算法步骤、边界处理、与配置/工厂的关联 |
+| **Tests** | 每个测试类/用例上方简短中文说明：测什么场景、期望行为 |
+
+**Do:**
+- 用中文写「为什么」和「做什么」，与 spec 术语保持一致（如 Retriever、Chunk、Provider）
+- 在复杂流程前用 1–2 行中文总述（例如 `# 按配置选择 Embedding 实现并缓存单例`）
+- 新建文件从第一行就带模块级中文说明
+
+**Don't:**
+- 不要为显而易见的语句写注释（如 `# 返回 result`）
+- 不要大段复述 spec 原文；注释应贴近代码、简洁可读
+- 不要只用英文注释；**中文为主**，标识符与 API 名保持英文
+
+**Minimal example:**
+
+```python
+"""配置加载与校验：从 settings.yaml 读取并构造 Settings 单例。"""
+
+class SettingsLoader:
+    """将 YAML 配置解析为强类型 Settings，供全项目注入使用。"""
+
+    def load(self, path: Path) -> Settings:
+        # 先读文件再校验，避免部分字段缺失导致后续模块初始化失败
+        raw = self._read_yaml(path)
+        return self._validate(raw)
+```
 
 ---
 
