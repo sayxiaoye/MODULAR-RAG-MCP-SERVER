@@ -42,7 +42,7 @@
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | A1 | 初始化目录树与最小可运行入口 | [x] | 2026-08-06 | 目录结构、配置文件、main.py 已创建 |
-| A2 | 引入 pytest 并建立测试目录约定 | [ ] | | |
+| A2 | 引入 pytest 并建立测试目录约定 | [x] | 2026-08-06 | pytest 配置、tests/ 目录结构、22 个冒烟测试 |
 | A3 | 配置加载与校验（Settings） | [ ] | | |
 
 #### 阶段 B：Libs 可插拔层
@@ -195,7 +195,7 @@
   - 可以启动虚拟环境模块
 - **测试方法**：运行 `python -m compileall src`（仅做语法/可导入性检查；pytest 基座在 A2 建立）。
 
-### A2：引入 pytest 并建立测试目录约定
+### A2：引入 pytest 并建立测试目录约定 ✅
 - **目标**：建立 `tests/unit|integration|e2e|fixtures` 目录与 pytest 运行基座。
 - **修改文件**：
   - `pyproject.toml`（添加 pytest 配置：testpaths、markers 等）
