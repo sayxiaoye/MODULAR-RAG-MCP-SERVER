@@ -6,8 +6,8 @@ Usage:
     python package_skill.py <path/to/skill-folder> [output-directory]
 
 Example:
-    python package_skill.py .github/skills/my-skill
-    python package_skill.py .github/skills/my-skill ./dist
+    python package_skill.py {{SKILL_ROOT}}/../my-skill
+    python package_skill.py {{SKILL_ROOT}}/../my-skill ./dist
 """
 
 import sys
@@ -89,8 +89,8 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python package_skill.py <path/to/skill-folder> [output-directory]")
         print("\nExample:")
-        print("  python package_skill.py .github/skills/my-skill")
-        print("  python package_skill.py .github/skills/my-skill ./dist")
+        print("  python package_skill.py {{SKILL_ROOT}}/../my-skill")
+        print("  python package_skill.py {{SKILL_ROOT}}/../my-skill ./dist")
         sys.exit(1)
 
     skill_path = sys.argv[1]

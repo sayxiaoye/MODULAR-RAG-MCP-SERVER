@@ -3,7 +3,7 @@
 Spec Sync — splits DEV_SPEC.md into chapter files under auto-coder/references/.
 
 Usage:
-    python scripts/sync_spec.py [--force]
+    python {{SKILL_ROOT}}/scripts/sync_spec.py [--force]
 """
 
 import hashlib

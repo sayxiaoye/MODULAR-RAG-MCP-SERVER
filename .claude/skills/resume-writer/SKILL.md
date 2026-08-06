@@ -35,7 +35,8 @@ description: "基于 Modular RAG MCP Server 项目生成定制化简历项目经
 - 决定：背景段落叙事、包装方向、项目名称建议
 
 **问题 3 — 技术侧重**（多选）：
-- Hybrid Search / Rerank / MCP 协议 / 可插拔架构 / 多模态 / 可观测性 / 评估体系 / 工程化(TDD) / Agent 扩展
+- Hybrid Search / Rerank / MCP 协议 / 可插拔架构 / 多模态 / 可观测性 / 评估体系 / 工程化(TDD) / Agent 扩展 / Skill 驱动全流程
+- **建议默认勾选「Skill 驱动全流程」**：这是本项目区别于其他 RAG 项目的核心差异化亮点，展示 AI 工程化方法论与全生命周期自动化能力，面试官会对此印象深刻
 - 决定：哪 3-5 个亮点写入 bullet points
 
 **问题 4 — 特殊要求**（自由文本）：
@@ -50,10 +51,12 @@ description: "基于 Modular RAG MCP Server 项目生成定制化简历项目经
 
 | 岗位方向 | 优先亮点 |
 |---------|---------|
-| RAG Engineer | 亮点1(Hybrid Search) → 3(Ingestion) → 5(多模态) → 7(评估) |
-| Backend / 架构 | 亮点2(可插拔架构) → 9(工程化) → 6(可观测性) → 8(DocumentManager) |
-| Agent Engineer | 亮点10(Agent) → 4(MCP) → 1(Hybrid Search) → 2(可插拔架构) |
-| MLE / LLM App | 亮点1(Hybrid Search) → 3(Ingestion) → 5(多模态) → 2(可插拔架构) |
+| RAG Engineer | 亮点1(Hybrid Search) → 3(Ingestion) → 5(多模态) → 7(评估) → 11(Skill 驱动) |
+| Backend / 架构 | 亮点2(可插拔架构) → 9(工程化) → 11(Skill 驱动) → 6(可观测性) → 8(DocumentManager) |
+| Agent Engineer | 亮点10(Agent) → 11(Skill 驱动) → 4(MCP) → 1(Hybrid Search) → 2(可插拔架构) |
+| MLE / LLM App | 亮点1(Hybrid Search) → 3(Ingestion) → 5(多模态) → 11(Skill 驱动) → 2(可插拔架构) |
+
+> **注意**：亮点 11（Skill 驱动全流程）是所有岗位方向的通用加分项，展示 AI 工程化思维与全流程自动化能力。无论用户选择哪个岗位方向，当用户勾选了「Skill 驱动全流程」时，必须将亮点 11 纳入最终 bullet points。
 
 用户的"技术侧重"多选结果优先覆盖默认排序。
 
@@ -111,6 +114,9 @@ description: "基于 Modular RAG MCP Server 项目生成定制化简历项目经
 | 文档规模 | 1000-50000 篇 | 视业务场景调整 |
 | 测试覆盖 | 1200+ 用例 | 项目实际数据 |
 | 组件支持数 | 4+ LLM Provider | 项目实际数据 |
+| Skill 覆盖度 | 5 大 Skill | 编码/测试/配置/打包/文档全覆盖 |
+| AI 自动完成任务数 | 68 个子任务 | DEV_SPEC 定义的全部任务 |
+| 开发周期压缩 | 2 个月业余时间 | 全流程 Skill 驱动 |
 
 标注"建议值，请根据实际调整"，需用户确认。量化指标须同时出现在**过程段 bullet 尾部**和**结果段汇总**中（结果段为最终汇总，bullet 中为分点展开）。
 

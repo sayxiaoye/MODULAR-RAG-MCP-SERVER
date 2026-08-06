@@ -1,9 +1,9 @@
 """Clean project for distribution — remove caches, venv, build artifacts, data, logs.
 
 Usage:
-    python .github/skills/package/scripts/clean.py          # dry-run (show what would be deleted)
-    python .github/skills/package/scripts/clean.py --execute # actually delete
-    python .github/skills/package/scripts/clean.py --execute --keep-data  # keep data/ & logs/
+    python {{SKILL_ROOT}}/scripts/clean.py          # dry-run (show what would be deleted)
+    python {{SKILL_ROOT}}/scripts/clean.py --execute # actually delete
+    python {{SKILL_ROOT}}/scripts/clean.py --execute --keep-data  # keep data/ & logs/
 """
 
 from __future__ import annotations
@@ -19,7 +19,13 @@ if sys.platform == "win32":
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
-REPO_ROOT = Path(__file__).resolve().parents[4]  # .github/skills/package/scripts → repo root
+SKILL_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+
+AUTO_CODER_SPEC_HASH = (SKILL_ROOT.parent / "auto-coder" / ".spec_hash").relative_to(REPO_ROOT).as_posix()
+CLAUDE_SKILLS_ROOT = (REPO_ROOT / ".claude" / "skills")
+CLAUDE_TEST_SKILL_DIR = (CLAUDE_SKILLS_ROOT / "test-skill").relative_to(REPO_ROOT).as_posix()
+CLAUDE_AUTO_CODER_SPEC_HASH = (CLAUDE_SKILLS_ROOT / "auto-coder" / ".spec_hash").relative_to(REPO_ROOT).as_posix()
 
 # ── Directories to remove ───────────────────────────────────────────────────
 REMOVE_DIRS: list[str] = [
@@ -57,7 +63,7 @@ REMOVE_DIRS: list[str] = [
     # Test data caches
     "test_data/chroma",
     # Claude skill test artifacts
-    ".claude/skills/test-skill",
+    CLAUDE_TEST_SKILL_DIR,
 ]
 
 # Directories removed only when --keep-data is NOT set
@@ -87,9 +93,9 @@ REMOVE_FILES: list[str] = [
     ".env.local",
     ".env.*.local",
     "secrets.yaml",
-    # Skill caches 
-    ".github/skills/auto-coder/.spec_hash",
-    ".claude/skills/auto-coder/.spec_hash",
+    # Skill caches
+    AUTO_CODER_SPEC_HASH,
+    CLAUDE_AUTO_CODER_SPEC_HASH,
     # Config backups
     "config/settings.yaml.bak",
     "config/settings.yaml.qa_backup",

@@ -14,7 +14,7 @@ Optional modifiers: append section letter (`run QA G`) or test ID (`run QA G-01`
 > ## ⛔ IRON RULES
 >
 > ### Rule 1: STRICTLY SERIAL
-> Pick ONE test → Run ONE command → Wait for output → Record ONE row in `QA_TEST_PROGRESS.md` → THEN pick next.
+> Pick ONE test → Run ONE command → Wait for output → Record ONE row in `{{SKILL_ROOT}}/QA_TEST_PROGRESS.md` → THEN pick next.
 > NEVER run two tests in one command. NEVER record two rows in one file edit. NEVER use parallel tool calls. NEVER plan the next test before recording the current one.
 >
 > ### Rule 2: PASS = TERMINAL OUTPUT EVIDENCE
@@ -36,7 +36,7 @@ Optional modifiers: append section letter (`run QA G`) or test ID (`run QA G-01`
 > Find bugs, not confirmations. 10+ passes with zero bugs → re-examine your rigor.
 >
 > ### Rule 6: SECTION-END VALIDATION
-> After completing a section, run `python .claude/skills/qa-tester/scripts/qa_validate_notes.py`.
+> After completing a section, run `python {{SKILL_ROOT}}/scripts/qa_validate_notes.py`.
 > Re-execute any flagged test before moving to next section.
 
 ---
@@ -49,7 +49,7 @@ Optional modifiers: append section letter (`run QA G`) or test ID (`run QA G-01`
 3. Run ONE command — WAIT for output
 4. Verify ALL assertions from Expected Result vs ACTUAL output
 5. Fix if needed (≤3 rounds)
-6. ⛔ GATE: Edit QA_TEST_PROGRESS.md (row + counters) — ONE row per edit
+6. ⛔ GATE: Edit `{{SKILL_ROOT}}/QA_TEST_PROGRESS.md` (row + counters) — ONE row per edit
 7. Only NOW return to step 1
 ```
 
@@ -59,10 +59,10 @@ Optional modifiers: append section letter (`run QA G`) or test ID (`run QA G-01`
 
 ## Step 1: Pick Target
 
-1. Read `QA_TEST_PLAN.md` for test steps and expected results.
-2. Read `QA_TEST_PROGRESS.md` for current status.
+1. Read `{{SKILL_ROOT}}/QA_TEST_PLAN.md` for test steps and expected results.
+2. Read `{{SKILL_ROOT}}/QA_TEST_PROGRESS.md` for current status.
 3. User-specified section/ID → scope to that. Otherwise → first ⬜ pending test.
-4. If any 🔧 tests exist, re-test those first.
+4. If any � tests exist, re-test those first.
 5. Execute in section order (A→O), within section in ID order.
 
 ### Test Categories
@@ -81,18 +81,18 @@ Optional modifiers: append section letter (`run QA G`) or test ID (`run QA G-01`
 ## Step 2: Set System State
 
 ```
-Empty          → python .claude/skills/qa-tester/scripts/qa_bootstrap.py clear
-Baseline       → python .claude/skills/qa-tester/scripts/qa_bootstrap.py baseline
-DeepSeek       → python .claude/skills/qa-tester/scripts/qa_config.py apply deepseek
-Rerank_LLM     → python .claude/skills/qa-tester/scripts/qa_config.py apply rerank_llm
-NoVision       → python .claude/skills/qa-tester/scripts/qa_config.py apply no_vision
-InvalidKey     → python .claude/skills/qa-tester/scripts/qa_config.py apply invalid_llm_key
-InvalidEmbedKey→ python .claude/skills/qa-tester/scripts/qa_config.py apply invalid_embed_key
+Empty          → python {{SKILL_ROOT}}/scripts/qa_bootstrap.py clear
+Baseline       → python {{SKILL_ROOT}}/scripts/qa_bootstrap.py baseline
+DeepSeek       → python {{SKILL_ROOT}}/scripts/qa_config.py apply deepseek
+Rerank_LLM     → python {{SKILL_ROOT}}/scripts/qa_config.py apply rerank_llm
+NoVision       → python {{SKILL_ROOT}}/scripts/qa_config.py apply no_vision
+InvalidKey     → python {{SKILL_ROOT}}/scripts/qa_config.py apply invalid_llm_key
+InvalidEmbedKey→ python {{SKILL_ROOT}}/scripts/qa_config.py apply invalid_embed_key
 Any            → no state change needed
 ```
 
-After config-profile tests → `python .claude/skills/qa-tester/scripts/qa_config.py restore`
-Check state → `python .claude/skills/qa-tester/scripts/qa_bootstrap.py status`
+After config-profile tests → `python {{SKILL_ROOT}}/scripts/qa_config.py restore`
+Check state → `python {{SKILL_ROOT}}/scripts/qa_bootstrap.py status`
 
 ---
 
@@ -100,7 +100,7 @@ Check state → `python .claude/skills/qa-tester/scripts/qa_bootstrap.py status`
 
 ### CLI Tests (G, H, I, parts of K/L/M)
 
-1. Read the test's **Steps** column from `QA_TEST_PLAN.md`.
+1. Read the test's **Steps** column from `{{SKILL_ROOT}}/QA_TEST_PLAN.md`.
 2. Run the exact command in terminal.
 3. Compare output against **Expected Result**:
    - **Ingest**: exit=0, output has stage names (load/split/transform/embed/upsert)
@@ -132,8 +132,8 @@ AppTest renders **all tab contents simultaneously** into a flat element list. Th
 
 **Example — tab does NOT exist:**
 ```python
-# For a test expecting "🟪 Rerank" tab with "skipped" message:
-tab_labels = [el.value for el in at.markdown if '🟪' in el.value or 'Rerank' in el.value]
+# For a test expecting "� Rerank" tab with "skipped" message:
+tab_labels = [el.value for el in at.markdown if '�' in el.value or 'Rerank' in el.value]
 print('Rerank tab label found:', tab_labels)
 # If empty → tab absent → mark ❌ with note "Rerank tab not rendered (stage absent)"
 ```
@@ -151,14 +151,14 @@ Primary method: `pytest tests/e2e/test_mcp_client.py -v` covers most J-* cases.
 Tests with 3+ sequential steps **MUST** use the runner script:
 
 ```
-python .claude/skills/qa-tester/scripts/qa_multistep.py <TEST_ID>
+python {{SKILL_ROOT}}/scripts/qa_multistep.py <TEST_ID>
 ```
 
 **Supported:** `N-01`, `N-03`, `N-04`, `N-05`, `N-06`, `O-07`, `M-03`, `M-04`, `M-05`, `M-06`, `M-10`, `M-11`, `L-07`
 
 The script executes every sub-step, prints ACTUAL values at each step, outputs `VERDICT: PASS/FAIL`. Copy the VERDICT and key step values into the Note.
 
-For tests NOT in the script, run commands from QA_TEST_PLAN.md manually and paste output.
+For tests NOT in the script, run commands from `{{SKILL_ROOT}}/QA_TEST_PLAN.md` manually and paste output.
 
 ---
 
@@ -176,7 +176,7 @@ For tests NOT in the script, run commands from QA_TEST_PLAN.md manually and past
 
 **⛔ GATE — do this BEFORE picking the next test.**
 
-Edit `QA_TEST_PROGRESS.md`: update ONE test row + summary counters. ONE row per file edit.
+Edit `{{SKILL_ROOT}}/QA_TEST_PROGRESS.md`: update ONE test row + summary counters. ONE row per file edit.
 
 ### ✅ PASS Requirements
 
@@ -204,18 +204,18 @@ All must be true:
 | ✅ | Pass — all assertions verified against actual output |
 | ❌ | Fail — failed after 3 fix attempts |
 | ⏭️ | Skip — missing third-party API key (K-series only) |
-| 🔧 | Fix applied — needs re-test |
+| � | Fix applied — needs re-test |
 | ⬜ | Pending — not yet tested |
 
 ### Counters
 
-Update in the same edit: `✅ Pass: X | ❌ Fail: Y | ⏭️ Skip: Z | 🔧 Fix: W | ⬜ Pending: P` (must sum to Total).
+Update in the same edit: `✅ Pass: X | ❌ Fail: Y | ⏭️ Skip: Z | � Fix: W | ⬜ Pending: P` (must sum to Total).
 
 ### Section-End Gate
 
 After each completed section:
 ```
-python .claude/skills/qa-tester/scripts/qa_validate_notes.py
+python {{SKILL_ROOT}}/scripts/qa_validate_notes.py
 ```
 Re-execute any flagged test. Do NOT proceed until 0 flags.
 
@@ -225,8 +225,8 @@ Re-execute any flagged test. Do NOT proceed until 0 flags.
 
 | File | Purpose |
 |------|---------|
-| `QA_TEST_PLAN.md` | Test steps and expected results |
-| `QA_TEST_PROGRESS.md` | Execution status and notes |
+| `{{SKILL_ROOT}}/QA_TEST_PLAN.md` | Test steps and expected results |
+| `{{SKILL_ROOT}}/QA_TEST_PROGRESS.md` | Execution status and notes |
 | `config/settings.yaml` | System configuration |
 | `scripts/ingest.py` / `query.py` / `evaluate.py` | CLI commands |
 | `tests/e2e/test_mcp_client.py` | MCP E2E tests |

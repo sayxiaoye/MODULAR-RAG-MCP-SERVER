@@ -5,7 +5,7 @@ Scans all ✅ test entries and flags those whose Note column contains
 cross-referencing, inference, or missing execution evidence.
 
 Usage:
-    python .github/skills/qa-tester/scripts/qa_validate_notes.py
+    python {{SKILL_ROOT}}/scripts/qa_validate_notes.py
 
 Exit code:
     0 — All notes pass validation

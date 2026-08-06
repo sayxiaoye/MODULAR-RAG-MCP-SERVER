@@ -8,7 +8,7 @@ Each function prints step-by-step results with ACTUAL values so the AI
 cannot infer or skip steps.
 
 Usage:
-    python .github/skills/qa-tester/scripts/qa_multistep.py <test_id>
+    python {{SKILL_ROOT}}/scripts/qa_multistep.py <test_id>
 
 Supported test IDs:
     N-01   Complete lifecycle: ingest→query→delete→query
@@ -41,6 +41,7 @@ SCRIPTS = REPO_ROOT / "scripts"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "sample_documents"
 CONFIG = REPO_ROOT / "config" / "settings.yaml"
 CONFIG_BAK = REPO_ROOT / "config" / "settings.yaml.multistep_bak"
+SKILL_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(args, check=False, capture=True):
@@ -59,7 +60,7 @@ def run(args, check=False, capture=True):
 
 def clear_all():
     """Clear all data via bootstrap script."""
-    r = run([str(REPO_ROOT / ".github/skills/qa-tester/scripts/qa_bootstrap.py"), "clear"])
+    r = run([str(SKILL_ROOT / "scripts" / "qa_bootstrap.py"), "clear"])
     if r.returncode != 0:
         print(f"  ⚠️ Clear failed: {r.stderr}")
     return r.returncode == 0

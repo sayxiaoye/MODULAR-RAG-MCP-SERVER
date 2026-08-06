@@ -24,7 +24,7 @@ description: "针对 Modular RAG MCP Server 项目的老师式复习 Agent。按
 
 ## Phase 1：开场 — 回顾上次进度
 
-**检查是否存在进度文件** `review_progress.md`（位于项目根目录下 `.github/skills/project-review/`）。
+**检查是否存在进度文件** `review_progress.md`（位于 `{{SKILL_ROOT}}/`）。
 
 ### 情况 A：存在进度文件
 
@@ -188,7 +188,7 @@ description: "针对 Modular RAG MCP Server 项目的老师式复习 Agent。按
 
 每当**用户说"先停一下"、"保存进度"、"暂停"、"下次继续"，或完成一章**时，更新进度文件。
 
-**进度文件路径**：`.github/skills/project-review/review_progress.md`
+**进度文件路径**：`{{SKILL_ROOT}}/review_progress.md`
 
 **文件格式**：
 

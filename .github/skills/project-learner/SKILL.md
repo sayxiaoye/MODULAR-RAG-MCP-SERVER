@@ -98,7 +98,7 @@ Build an internal mental model covering these **10 Knowledge Domains**, each con
 
 ## Phase 2: Check Learning History
 
-1. Try reading `.github/skills/project-learner/references/LEARNING_PROGRESS.md`
+1. Try reading `{{SKILL_ROOT}}/references/LEARNING_PROGRESS.md`
 2. **File missing** → first-time learner, proceed to Phase 3
 3. **File exists** → parse BOTH tables:
    - **Domain Summary**: which domains are ⬜/🔴/🔶/✅
@@ -295,7 +295,7 @@ Guidelines:
 
 ## Phase 8: Persist Progress
 
-Update `.github/skills/project-learner/references/LEARNING_PROGRESS.md`.
+Update `{{SKILL_ROOT}}/references/LEARNING_PROGRESS.md`.
 
 If file doesn't exist, create it from the template in [references/LEARNING_PROGRESS.md](references/LEARNING_PROGRESS.md). If it exists, update it.
 
@@ -349,7 +349,7 @@ After persisting, ask the user (中文):
 
 | File | Purpose |
 |------|---------|
-| `.github/skills/project-learner/references/LEARNING_PROGRESS.md` | Persistent learning state (45 sub-topics) |
+| `{{SKILL_ROOT}}/references/LEARNING_PROGRESS.md` | Persistent learning state (45 sub-topics) |
 | `DEV_SPEC.md` | Project specification & architecture |
 | `config/settings.yaml` | Configuration reference |
 | `src/` | All source code modules |
