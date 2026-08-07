@@ -1,4 +1,12 @@
-"""Configuration loading and validation for the Modular RAG MCP Server."""
+"""配置加载与校验模块。
+
+职责：
+- 从 ``config/settings.yaml`` 读取 YAML 配置
+- 解析为强类型 dataclass（``Settings`` 及子配置块）
+- 校验必填字段，失败时抛出 :class:`SettingsError`
+
+全项目通过 :func:`load_settings` 获取配置，避免在业务代码中硬编码路径或参数。
+"""
 
 from __future__ import annotations
 
@@ -11,7 +19,7 @@ import yaml
 # ---------------------------------------------------------------------------
 # Repo root & path resolution
 # ---------------------------------------------------------------------------
-# Anchored to this file's location: <repo>/src/core/settings.py → parents[2]
+# 以本文件为锚点：<repo>/src/core/settings.py → parents[2] 即仓库根
 REPO_ROOT: Path = Path(__file__).resolve().parents[2]
 
 # Default absolute path to settings.yaml
@@ -19,10 +27,15 @@ DEFAULT_SETTINGS_PATH: Path = REPO_ROOT / "config" / "settings.yaml"
 
 
 def resolve_path(relative: Union[str, Path]) -> Path:
-    """Resolve a repo-relative path to an absolute path.
+    """将仓库相对路径解析为绝对路径。
 
-    If *relative* is already absolute it is returned as-is.  Otherwise
-    it is resolved against :data:`REPO_ROOT`.
+    若 *relative* 已是绝对路径则原样返回；否则基于 :data:`REPO_ROOT` 拼接并 resolve。
+
+    Args:
+        relative: 相对或绝对路径字符串/Path。
+
+    Returns:
+        解析后的绝对路径。
 
     >>> resolve_path("config/settings.yaml")  # doctest: +SKIP
     PosixPath('/home/user/Modular-RAG-MCP-Server/config/settings.yaml')
@@ -34,10 +47,11 @@ def resolve_path(relative: Union[str, Path]) -> Path:
 
 
 class SettingsError(ValueError):
-    """Raised when settings validation fails."""
+    """配置缺失、类型不符或校验失败时抛出。"""
 
 
 def _require_mapping(data: Dict[str, Any], key: str, path: str) -> Dict[str, Any]:
+    """要求字段存在且为 dict（YAML 中的嵌套配置块）。"""
     value = data.get(key)
     if value is None:
         raise SettingsError(f"Missing required field: {path}.{key}")
@@ -47,12 +61,14 @@ def _require_mapping(data: Dict[str, Any], key: str, path: str) -> Dict[str, Any
 
 
 def _require_value(data: Dict[str, Any], key: str, path: str) -> Any:
+    """要求字段存在且非 None。"""
     if key not in data or data.get(key) is None:
         raise SettingsError(f"Missing required field: {path}.{key}")
     return data[key]
 
 
 def _require_str(data: Dict[str, Any], key: str, path: str) -> str:
+    """要求非空字符串。"""
     value = _require_value(data, key, path)
     if not isinstance(value, str) or not value.strip():
         raise SettingsError(f"Expected non-empty string for field: {path}.{key}")
@@ -60,6 +76,7 @@ def _require_str(data: Dict[str, Any], key: str, path: str) -> str:
 
 
 def _require_int(data: Dict[str, Any], key: str, path: str) -> int:
+    """要求整数类型。"""
     value = _require_value(data, key, path)
     if not isinstance(value, int):
         raise SettingsError(f"Expected integer for field: {path}.{key}")
@@ -67,6 +84,7 @@ def _require_int(data: Dict[str, Any], key: str, path: str) -> int:
 
 
 def _require_number(data: Dict[str, Any], key: str, path: str) -> float:
+    """要求数值类型（int/float），统一返回 float。"""
     value = _require_value(data, key, path)
     if not isinstance(value, (int, float)):
         raise SettingsError(f"Expected number for field: {path}.{key}")
@@ -74,6 +92,7 @@ def _require_number(data: Dict[str, Any], key: str, path: str) -> float:
 
 
 def _require_bool(data: Dict[str, Any], key: str, path: str) -> bool:
+    """要求布尔类型（YAML 的 true/false）。"""
     value = _require_value(data, key, path)
     if not isinstance(value, bool):
         raise SettingsError(f"Expected boolean for field: {path}.{key}")
@@ -81,6 +100,7 @@ def _require_bool(data: Dict[str, Any], key: str, path: str) -> bool:
 
 
 def _require_list(data: Dict[str, Any], key: str, path: str) -> List[Any]:
+    """要求列表类型。"""
     value = _require_value(data, key, path)
     if not isinstance(value, list):
         raise SettingsError(f"Expected list for field: {path}.{key}")
@@ -89,6 +109,8 @@ def _require_list(data: Dict[str, Any], key: str, path: str) -> List[Any]:
 
 @dataclass(frozen=True)
 class LLMSettings:
+    """大语言模型（LLM）配置，对应 settings.yaml 的 ``llm`` 块。"""
+
     provider: str
     model: str
     temperature: float
@@ -104,6 +126,8 @@ class LLMSettings:
 
 @dataclass(frozen=True)
 class EmbeddingSettings:
+    """文本向量化（Embedding）配置，对应 ``embedding`` 块。"""
+
     provider: str
     model: str
     dimensions: int
@@ -118,6 +142,8 @@ class EmbeddingSettings:
 
 @dataclass(frozen=True)
 class VectorStoreSettings:
+    """向量库配置，对应 ``vector_store`` 块（如 Chroma 持久化目录与集合名）。"""
+
     provider: str
     persist_directory: str
     collection_name: str
@@ -125,14 +151,18 @@ class VectorStoreSettings:
 
 @dataclass(frozen=True)
 class RetrievalSettings:
+    """检索与融合参数，对应 ``retrieval`` 块（Dense/Sparse top-k 与 RRF）。"""
+
     dense_top_k: int
     sparse_top_k: int
     fusion_top_k: int
-    rrf_k: int
+    rrf_k: int  # Reciprocal Rank Fusion 常数
 
 
 @dataclass(frozen=True)
 class RerankSettings:
+    """重排序模型配置，对应 ``rerank`` 块。"""
+
     enabled: bool
     provider: str
     model: str
@@ -141,6 +171,8 @@ class RerankSettings:
 
 @dataclass(frozen=True)
 class EvaluationSettings:
+    """RAG 评测配置，对应 ``evaluation`` 块。"""
+
     enabled: bool
     provider: str
     metrics: List[str]
@@ -148,6 +180,8 @@ class EvaluationSettings:
 
 @dataclass(frozen=True)
 class ObservabilitySettings:
+    """可观测性配置：日志级别、链路追踪与结构化日志，对应 ``observability`` 块。"""
+
     log_level: str
     trace_enabled: bool
     trace_file: str
@@ -156,6 +190,8 @@ class ObservabilitySettings:
 
 @dataclass(frozen=True)
 class VisionLLMSettings:
+    """多模态视觉 LLM 配置（图表/截图理解），对应可选的 ``vision_llm`` 块。"""
+
     enabled: bool
     provider: str
     model: str
@@ -169,6 +205,8 @@ class VisionLLMSettings:
 
 @dataclass(frozen=True)
 class IngestionSettings:
+    """文档入库与分块配置，对应可选的 ``ingestion`` 块。"""
+
     chunk_size: int
     chunk_overlap: int
     splitter: str
@@ -179,6 +217,12 @@ class IngestionSettings:
 
 @dataclass(frozen=True)
 class Settings:
+    """应用全局配置根对象，聚合各子配置块。
+
+    必填块：llm、embedding、vector_store、retrieval、rerank、evaluation、observability。
+    可选块：ingestion、vision_llm。
+    """
+
     llm: LLMSettings
     embedding: EmbeddingSettings
     vector_store: VectorStoreSettings
@@ -191,9 +235,23 @@ class Settings:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Settings":
+        """将 YAML 解析后的 dict 转为强类型 Settings。
+
+        先校验各必填嵌套块存在，再逐字段类型检查；可选块缺失时对应字段为 None。
+
+        Args:
+            data: ``yaml.safe_load`` 得到的根 mapping。
+
+        Returns:
+            不可变的 Settings 实例。
+
+        Raises:
+            SettingsError: 根节点非 dict、缺少必填块或字段类型不符。
+        """
         if not isinstance(data, dict):
             raise SettingsError("Settings root must be a mapping")
 
+        # 提取各必填配置块
         llm = _require_mapping(data, "llm", "settings")
         embedding = _require_mapping(data, "embedding", "settings")
         vector_store = _require_mapping(data, "vector_store", "settings")
@@ -202,6 +260,7 @@ class Settings:
         evaluation = _require_mapping(data, "evaluation", "settings")
         observability = _require_mapping(data, "observability", "settings")
 
+        # 可选：文档入库配置
         ingestion_settings = None
         if "ingestion" in data:
             ingestion = _require_mapping(data, "ingestion", "settings")
@@ -210,10 +269,11 @@ class Settings:
                 chunk_overlap=_require_int(ingestion, "chunk_overlap", "ingestion"),
                 splitter=_require_str(ingestion, "splitter", "ingestion"),
                 batch_size=_require_int(ingestion, "batch_size", "ingestion"),
-                chunk_refiner=ingestion.get("chunk_refiner"),  # 可选配置块
-                metadata_enricher=ingestion.get("metadata_enricher"),  # 可选配置块
+                chunk_refiner=ingestion.get("chunk_refiner"),
+                metadata_enricher=ingestion.get("metadata_enricher"),
             )
 
+        # 可选：视觉多模态 LLM 配置
         vision_llm_settings = None
         if "vision_llm" in data:
             vision_llm = _require_mapping(data, "vision_llm", "settings")
@@ -287,8 +347,16 @@ class Settings:
 
 
 def validate_settings(settings: Settings) -> None:
-    """Validate settings and raise SettingsError if invalid."""
+    """对解析后的 Settings 做二次业务校验。
 
+    补充 from_dict 未覆盖的「非空 provider」等约束，不通过则抛出 SettingsError。
+
+    Args:
+        settings: 已由 from_dict 构造的配置对象。
+
+    Raises:
+        SettingsError: 任一关键 provider 或 log_level 为空。
+    """
     if not settings.llm.provider:
         raise SettingsError("Missing required field: llm.provider")
     if not settings.embedding.provider:
@@ -309,8 +377,14 @@ def load_settings(path: str | Path | None = None) -> Settings:
     """Load settings from a YAML file and validate required fields.
 
     Args:
-        path: Path to settings YAML.  Defaults to
-            ``<repo>/config/settings.yaml`` (absolute, CWD-independent).
+        path: 配置文件路径；默认使用 ``<repo>/config/settings.yaml`` 的绝对路径，
+            与工作目录无关。
+
+    Returns:
+        校验通过的 Settings 实例。
+
+    Raises:
+        SettingsError: 文件不存在、YAML 无效或校验失败。
     """
     settings_path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
     if not settings_path.is_absolute():
