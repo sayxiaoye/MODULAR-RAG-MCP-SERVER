@@ -58,7 +58,7 @@
 | B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-08-07 | OpenAI/Azure/DeepSeek + openai_compatible + 8个冒烟测试 |
 | B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试 |
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
-| B7.4 | Ollama Embedding 实现 | [ ] | | |
+| B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试 |
 | B7.5 | Recursive Splitter 默认实现 | [ ] | | |
 | B7.6 | ChromaStore 默认实现 | [ ] | | |
 | B7.7 | LLM Reranker 实现 | [ ] | | |
@@ -338,7 +338,7 @@
   - Azure 实现复用 OpenAI Embedding 的核心逻辑，保持行为一致性。
 - **测试方法**：`pytest -q tests/unit/test_embedding_providers_smoke.py`。
 
-### B7.4：Ollama Embedding 实现
+### B7.4：Ollama Embedding 实现 ✅
 - **目标**：补齐 `ollama_embedding.py`，支持通过 Ollama HTTP API 调用本地部署的 Embedding 模型（如 `nomic-embed-text`、`mxbai-embed-large` 等），实现 `embed(texts)` 批量向量化功能。
 - **修改文件**：
   - `src/libs/embedding/ollama_embedding.py`
