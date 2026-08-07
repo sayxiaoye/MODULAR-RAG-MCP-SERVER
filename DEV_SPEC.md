@@ -1966,7 +1966,7 @@ dashboard:
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [x] | 2026-08-07 | BaseReranker + NoneReranker + RerankerFactory + 7个单元测试 |
 | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-08-07 | CustomEvaluator + EvaluatorFactory + 7个单元测试 |
 | B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-08-07 | OpenAI/Azure/DeepSeek + openai_compatible + 8个冒烟测试 |
-| B7.2 | Ollama LLM 实现 | [ ] | | |
+| B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试 |
 | B7.3 | OpenAI & Azure Embedding 实现 | [ ] | | |
 | B7.4 | Ollama Embedding 实现 | [ ] | | |
 | B7.5 | Recursive Splitter 默认实现 | [ ] | | |
@@ -2225,7 +2225,7 @@ dashboard:
   - `chat(messages)` 对输入 shape 校验清晰，异常信息可读（包含 provider 与错误类型）。
 - **测试方法**：`pytest -q tests/unit/test_llm_providers_smoke.py`。
 
-### B7.2：Ollama LLM（本地后端）
+### B7.2：Ollama LLM（本地后端） ✅
 - **目标**：补齐 `ollama_llm.py`，支持本地 HTTP endpoint（默认 `base_url` + `model`），并可被 mock 测试。
 - **修改文件**：
   - `src/libs/llm/ollama_llm.py`
