@@ -62,3 +62,17 @@ class LLMFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+
+def _register_builtin_providers() -> None:
+    """注册 B7 阶段内置 LLM Provider（import 时执行一次）。"""
+    from libs.llm.azure_llm import AzureLLM
+    from libs.llm.deepseek_llm import DeepSeekLLM
+    from libs.llm.openai_llm import OpenAILLM
+
+    register_llm_provider("openai", OpenAILLM)
+    register_llm_provider("azure", AzureLLM)
+    register_llm_provider("deepseek", DeepSeekLLM)
+
+
+_register_builtin_providers()

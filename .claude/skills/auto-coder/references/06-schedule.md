@@ -55,7 +55,7 @@
 | B4 | VectorStore 抽象接口与工厂 | [x] | 2026-08-07 | BaseVectorStore + VectorStoreFactory + 5个契约测试 |
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [x] | 2026-08-07 | BaseReranker + NoneReranker + RerankerFactory + 7个单元测试 |
 | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-08-07 | CustomEvaluator + EvaluatorFactory + 7个单元测试 |
-| B7.1 | OpenAI-Compatible LLM 实现 | [ ] | | |
+| B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-08-07 | OpenAI/Azure/DeepSeek + openai_compatible + 8个冒烟测试 |
 | B7.2 | Ollama LLM 实现 | [ ] | | |
 | B7.3 | OpenAI & Azure Embedding 实现 | [ ] | | |
 | B7.4 | Ollama Embedding 实现 | [ ] | | |
@@ -303,7 +303,7 @@
 
 > 说明：B7 只补齐与端到端主链路强相关的默认实现（LLM/Embedding/Splitter/VectorStore/Reranker）。其余可选扩展（例如额外 splitter 策略、更多 vector store 后端、更多 evaluator 后端等）保持原排期不提前。
 
-### B7.1：OpenAI-Compatible LLM（OpenAI/Azure/DeepSeek）
+### B7.1：OpenAI-Compatible LLM（OpenAI/Azure/DeepSeek） ✅
 - **目标**：补齐 OpenAI-compatible 的 LLM 实现，确保通过 `LLMFactory` 可创建并可被 mock 测试。
 - **修改文件**：
   - `src/libs/llm/openai_llm.py`
