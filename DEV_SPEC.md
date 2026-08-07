@@ -1962,7 +1962,7 @@ dashboard:
 | B1 | LLM 抽象接口与工厂 | [x] | 2026-08-06 | BaseLLM + LLMFactory + 5个单元测试 |
 | B2 | Embedding 抽象接口与工厂 | [x] | 2026-08-06 | BaseEmbedding + EmbeddingFactory + 4个单元测试 |
 | B3 | Splitter 抽象接口与工厂 | [x] | 2026-08-07 | BaseSplitter + SplitterFactory + 5个单元测试 |
-| B4 | VectorStore 抽象接口与工厂 | [ ] | | |
+| B4 | VectorStore 抽象接口与工厂 | [x] | 2026-08-07 | BaseVectorStore + VectorStoreFactory + 5个契约测试 |
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [ ] | | |
 | B6 | Evaluator 抽象接口与工厂 | [ ] | | |
 | B7.1 | OpenAI-Compatible LLM 实现 | [ ] | | |
@@ -2175,7 +2175,7 @@ dashboard:
 - **验收标准**：Factory 能根据配置返回不同类型的 Splitter 实例（测试中可用 Fake 实现）。
 - **测试方法**：`pytest -q tests/unit/test_splitter_factory.py`。
 
-### B4：VectorStore 抽象接口与工厂（先定义契约）
+### B4：VectorStore 抽象接口与工厂（先定义契约） ✅
 - **目标**：定义 `BaseVectorStore` 与 `VectorStoreFactory`，先不接真实 DB。
 - **修改文件**：
   - `src/libs/vector_store/base_vector_store.py`
