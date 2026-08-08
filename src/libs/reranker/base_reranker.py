@@ -13,6 +13,10 @@ class RerankerError(Exception):
     """Reranker 调用或候选校验失败时抛出。"""
 
 
+class RerankerFallbackSignal(RerankerError):
+    """精排失败但可由 Core 层回退到 fusion 排名时抛出（供 D6 fallback 捕获）。"""
+
+
 class BaseReranker(ABC):
     """Reranker 抽象基类：根据 query 对候选列表重新排序。"""
 

@@ -68,3 +68,13 @@ class RerankerFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+
+def _register_builtin_rerankers() -> None:
+    """注册 B7.7 阶段内置 Reranker Provider。"""
+    from libs.reranker.llm_reranker import LLMReranker
+
+    register_reranker("llm", LLMReranker)
+
+
+_register_builtin_rerankers()
