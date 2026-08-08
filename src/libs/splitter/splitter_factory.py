@@ -71,3 +71,13 @@ class SplitterFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+
+def _register_builtin_splitters() -> None:
+    """注册 B7.5 阶段内置 Splitter 实现。"""
+    from libs.splitter.recursive_splitter import RecursiveSplitter
+
+    register_splitter("recursive", RecursiveSplitter)
+
+
+_register_builtin_splitters()

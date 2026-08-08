@@ -1969,7 +1969,7 @@ dashboard:
 | B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试 |
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
 | B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试 |
-| B7.5 | Recursive Splitter 默认实现 | [ ] | | |
+| B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
 | B7.6 | ChromaStore 默认实现 | [ ] | | |
 | B7.7 | LLM Reranker 实现 | [ ] | | |
 | B7.8 | Cross-Encoder Reranker 实现 | [ ] | | |
@@ -2262,7 +2262,7 @@ dashboard:
   - mock 测试覆盖正常响应、连接失败、超时等场景。
 - **测试方法**：`pytest -q tests/unit/test_ollama_embedding.py`。
 
-### B7.5：Recursive Splitter 默认实现
+### B7.5：Recursive Splitter 默认实现 ✅
 - **目标**：补齐 `recursive_splitter.py`，封装 LangChain 的切分逻辑，作为默认切分器。
 - **修改文件**：
   - `src/libs/splitter/recursive_splitter.py`
