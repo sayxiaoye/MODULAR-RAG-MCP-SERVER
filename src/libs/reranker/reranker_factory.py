@@ -71,10 +71,12 @@ class RerankerFactory:
 
 
 def _register_builtin_rerankers() -> None:
-    """注册 B7.7 阶段内置 Reranker Provider。"""
+    """注册 B7.7/B7.8 阶段内置 Reranker Provider。"""
+    from libs.reranker.cross_encoder_reranker import CrossEncoderReranker
     from libs.reranker.llm_reranker import LLMReranker
 
     register_reranker("llm", LLMReranker)
+    register_reranker("cross_encoder", CrossEncoderReranker)
 
 
 _register_builtin_rerankers()

@@ -62,7 +62,7 @@
 | B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
 | B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
-| B7.8 | Cross-Encoder Reranker 实现 | [ ] | | |
+| B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [ ] | | |
 | B9 | Azure Vision LLM 实现 | [ ] | | |
 
@@ -384,7 +384,7 @@
   - 输出严格结构化（例如 ranked ids），不满足 schema 时抛出可读错误。
 - **测试方法**：`pytest -q tests/unit/test_llm_reranker.py`。
 
-### B7.8：Cross-Encoder Reranker（本地/托管模型，占位可跑）
+### B7.8：Cross-Encoder Reranker（本地/托管模型，占位可跑） ✅
 - **目标**：补齐 `cross_encoder_reranker.py`，支持对 Top-M candidates 打分排序；测试中用 mock scorer 保证 deterministic。
 - **修改文件**：
   - `src/libs/reranker/cross_encoder_reranker.py`
