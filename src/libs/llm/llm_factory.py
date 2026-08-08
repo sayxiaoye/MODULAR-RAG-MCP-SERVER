@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Callable, Dict, Type
 
-from core.settings import LLMSettings, Settings
+from core.settings import LLMSettings, Settings, VisionLLMSettings
 from libs.llm.base_llm import BaseLLM, LLMError
+from libs.llm.base_vision_llm import BaseVisionLLM
 
 
 class LLMFactoryError(LLMError):
@@ -14,6 +15,28 @@ class LLMFactoryError(LLMError):
 
 # Provider 名称 -> 实现类的注册表，B7 阶段注册真实后端
 _LLM_REGISTRY: Dict[str, Type[BaseLLM]] = {}
+
+# Vision LLM Provider 注册表，B8/B9 阶段注册多模态后端
+_VISION_LLM_REGISTRY: Dict[str, Type[BaseVisionLLM]] = {}
+
+
+def register_vision_llm_provider(name: str, implementation: Type[BaseVisionLLM]) -> None:
+    """注册 Vision LLM Provider 实现，供 B9 真实后端与测试 Fake 注入。"""
+    key = name.strip().lower()
+    if not key:
+        raise LLMFactoryError("Vision LLM Provider 名称不能为空")
+    _VISION_LLM_REGISTRY[key] = implementation
+
+
+def _default_vision_constructor(settings: VisionLLMSettings) -> BaseVisionLLM:
+    """根据 VisionLLMSettings 选择已注册的多模态实现并实例化。"""
+    provider = settings.provider.strip().lower()
+    if provider not in _VISION_LLM_REGISTRY:
+        known = ", ".join(sorted(_VISION_LLM_REGISTRY)) or "（无）"
+        raise LLMFactoryError(
+            f"未知的 Vision LLM provider: {settings.provider!r}，已注册: {known}"
+        )
+    return _VISION_LLM_REGISTRY[provider](settings)
 
 
 def register_llm_provider(name: str, implementation: Type[BaseLLM]) -> None:
@@ -36,9 +59,10 @@ def _default_constructor(settings: LLMSettings) -> BaseLLM:
 
 
 class LLMFactory:
-    """按配置创建 BaseLLM 实例的工厂入口。"""
+    """按配置创建 BaseLLM / BaseVisionLLM 实例的工厂入口。"""
 
     _constructor: Callable[[LLMSettings], BaseLLM] = _default_constructor
+    _vision_constructor: Callable[[VisionLLMSettings], BaseVisionLLM] = _default_vision_constructor
 
     @classmethod
     def create(cls, settings: Settings) -> BaseLLM:
@@ -62,6 +86,46 @@ class LLMFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+    @classmethod
+    def create_vision_llm(cls, settings: Settings) -> BaseVisionLLM:
+        """
+        从 Settings 读取 vision_llm 配置并创建多模态 Provider 实例。
+
+        Args:
+            settings: 项目全局配置，使用其中的 vision_llm 段。
+
+        Returns:
+            已配置的 BaseVisionLLM 实现。
+
+        Raises:
+            LLMFactoryError: 缺少 vision_llm 配置、未启用或 provider 未注册。
+        """
+        vision = settings.vision_llm
+        if vision is None:
+            raise LLMFactoryError("缺少 vision_llm 配置，无法创建 Vision LLM")
+        if not vision.enabled:
+            raise LLMFactoryError("vision_llm.enabled=false，无法创建 Vision LLM")
+        return cls._vision_constructor(vision)
+
+    @classmethod
+    def set_vision_constructor(
+        cls,
+        constructor: Callable[[VisionLLMSettings], BaseVisionLLM],
+    ) -> None:
+        """测试专用：替换 Vision LLM 默认构造逻辑。"""
+        cls._vision_constructor = constructor
+
+    @classmethod
+    def reset_vision_constructor(cls) -> None:
+        """恢复 Vision LLM 默认构造逻辑。"""
+        cls._vision_constructor = _default_vision_constructor
+
+    @classmethod
+    def reset_all_constructors(cls) -> None:
+        """同时恢复文本 LLM 与 Vision LLM 的默认构造逻辑。"""
+        cls.reset_constructor()
+        cls.reset_vision_constructor()
 
 
 def _register_builtin_providers() -> None:
