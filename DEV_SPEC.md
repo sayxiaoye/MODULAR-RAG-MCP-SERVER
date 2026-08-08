@@ -1970,7 +1970,7 @@ dashboard:
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
 | B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试 |
 | B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
-| B7.6 | ChromaStore 默认实现 | [ ] | | |
+| B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [ ] | | |
 | B7.8 | Cross-Encoder Reranker 实现 | [ ] | | |
 | B8 | Vision LLM 抽象接口与工厂集成 | [ ] | | |
@@ -2272,7 +2272,7 @@ dashboard:
   - `split_text` 能正确处理 Markdown 结构（标题/代码块不被打断）。
 - **测试方法**：`pytest -q tests/unit/test_recursive_splitter_lib.py`。
 
-### B7.6：ChromaStore（VectorStore 默认后端）
+### B7.6：ChromaStore（VectorStore 默认后端） ✅
 - **目标**：补齐 `chroma_store.py`，支持最小 `upsert(records)` 与 `query(vector, top_k, filters)`，并支持本地持久化目录（例如 `data/db/chroma/`）。
 - **修改文件**：
   - `src/libs/vector_store/chroma_store.py`

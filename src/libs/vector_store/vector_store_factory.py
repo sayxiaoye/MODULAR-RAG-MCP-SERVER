@@ -62,3 +62,13 @@ class VectorStoreFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+
+def _register_builtin_providers() -> None:
+    """注册 B7.6 阶段内置 VectorStore Provider。"""
+    from libs.vector_store.chroma_store import ChromaStore
+
+    register_vector_store("chroma", ChromaStore)
+
+
+_register_builtin_providers()
