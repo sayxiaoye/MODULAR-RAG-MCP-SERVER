@@ -158,6 +158,7 @@ Round 3 still failing → STOP, show failure report to user
    - 状态：`[ ]` → `[x]`
    - **完成日期**：当天日期，格式 `YYYY-MM-DD`（与表中 A/B/C 阶段一致）
    - **备注**：一行摘要，格式与既有行一致，例如 `模块名 + 核心类/接口 + N个单元测试`（从本次实现与测试结果提炼，勿空着）
+   - **详情标题**：在 `DEV_SPEC.md` 中该任务的 `### {ID}：…` 行末追加 ` ✅`
 2. **Re-sync**: `python {{SKILL_ROOT}}/scripts/sync_spec.py --force`
 3. **Show summary & ask**:
 

@@ -73,7 +73,7 @@
 | C1 | 定义核心数据类型/契约（Document/Chunk/ChunkRecord） | [x] | 2026-08-10 | core/types + ImageMetadata + 6个单元测试 |
 | C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | file_integrity + SQLiteIntegrityChecker + WAL + 6个单元测试 |
 | C3 | Loader 抽象基类与 PDF Loader | [x] | 2026-08-10 | BaseLoader + PdfLoader + 图片占位符契约 + 5个单元测试 |
-| C4 | Splitter 集成（调用 Libs） | [ ] | | |
+| C4 | Splitter 集成（调用 Libs） | [x] | 2026-08-10 | DocumentChunker + 图片按需分发 + 6个单元测试 |
 | C5 | Transform 基类 + ChunkRefiner | [ ] | | |
 | C6 | MetadataEnricher | [ ] | | |
 | C7 | ImageCaptioner | [ ] | | |
@@ -456,7 +456,7 @@
   - **文本中图片占位符规范**：在 `Document.text` 中，图片位置使用 `[IMAGE: {image_id}]` 格式标记。
 - **测试方法**：`pytest -q tests/unit/test_core_types.py`。
 
-### C2：文件完整性检查（SHA256）
+### C2：文件完整性检查（SHA256） ✅
 - **目标**：在Libs中实现 `file_integrity.py`：计算文件 hash，并提供“是否跳过”的判定接口（使用 SQLite 作为默认存储，支持后续替换为 Redis/PostgreSQL）。
 - **修改文件**：
   - `src/libs/loader/file_integrity.py`
@@ -476,7 +476,7 @@
   - 支持并发写入（SQLite WAL模式）
 - **测试方法**：`pytest -q tests/unit/test_file_integrity.py`。
 
-### C3：Loader 抽象基类与 PDF Loader 壳子
+### C3：Loader 抽象基类与 PDF Loader 壳子 ✅
 - **目标**：在Libs中定义 `BaseLoader`，并实现 `PdfLoader` 的最小行为。
 - **修改文件**：
   - `src/libs/loader/base_loader.py`
@@ -499,7 +499,7 @@
   - 验证纯文本PDF能正常解析
   - 验证带图片PDF能提取图片并正确插入占位符
 
-### C4：Splitter 集成（调用 Libs）
+### C4：Splitter 集成（调用 Libs） ✅
 - **目标**：实现 Chunking 模块作为 `libs.splitter` 和 Ingestion Pipeline 之间的**适配器层**，完成 Document→Chunks 的业务对象转换。
 - **核心职责（DocumentChunker 相比 libs.splitter 的增值）**：
   - **职责边界说明**：
