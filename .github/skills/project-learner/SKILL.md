@@ -101,8 +101,8 @@ Build an internal mental model covering these **10 Knowledge Domains**, each con
 1. Try reading `{{SKILL_ROOT}}/references/LEARNING_PROGRESS.md`
 2. **File missing** → first-time learner, proceed to Phase 3
 3. **File exists** → parse BOTH tables:
-   - **Domain Summary**: which domains are ⬜/🔴/🔶/✅
-   - **Sub-topic Progress**: which sub-topics are ⬜ (unlearned), 🔴 (weak ≤3), 🔶 (learning 4-6), ✅ (mastered ≥7)
+   - **Domain Summary**: which domains are ⬜/🔴/🚧/✅
+   - **Sub-topic Progress**: which sub-topics are ⬜ (unlearned), 🔴 (weak ≤3), 🚧 (learning 4-6), ✅ (mastered ≥7)
    - Count: total sub-topics mastered / 45
    - Identify lowest-scoring sub-topics for review recommendation
 
@@ -123,12 +123,12 @@ Use `ask_questions` (中文) to determine what the user wants:
 
 If user picks 📋 → display the full progress table from `LEARNING_PROGRESS.md` and stop.
 
-If user picks 🎯 → Agent auto-selects the optimal sub-topic (prioritize: ⬜ unlearned in weakest domain → 🔴 weak → 🔶 lowest score). Skip Question 2 & 3, go directly to Phase 4.
+If user picks 🎯 → Agent auto-selects the optimal sub-topic (prioritize: ⬜ unlearned in weakest domain → 🔴 weak → 🚧 lowest score). Skip Question 2 & 3, go directly to Phase 4.
 
 **Question 2 — 知识域选择** (single-select, only for 🆕 or 📖):
 
 List all 10 domains with current status + completion rate. Example format:
-- `D1 RAG Pipeline 整体架构 [2/5 ✅] 🔶`
+- `D1 RAG Pipeline 整体架构 [2/5 ✅] 🚧`
 - `D2 Ingestion Pipeline [0/5 ✅] ⬜`
 
 For 📖 mode: only show domains with previous scores. For 🆕 mode: prioritize domains with most ⬜ sub-topics.
@@ -137,7 +137,7 @@ For 📖 mode: only show domains with previous scores. For 🆕 mode: prioritize
 
 List all sub-topics under the selected domain with their status:
 - `D2.1 Pipeline 整体流程 ⬜ 未学习`
-- `D2.2 Chunking 策略 🔶 6/10`
+- `D2.2 Chunking 策略 🚧 6/10`
 - `D2.3 Transform 链 ✅ 8/10`
 
 Include option:
@@ -306,12 +306,12 @@ If file doesn't exist, create it from the template in [references/LEARNING_PROGR
    - 已学 = count of sessions for that sub-topic
    - 最高分 = max score across all sessions for this sub-topic
    - 最近分 = score from this session
-   - Status: ≥7 → ✅ 掌握, 4-6 → 🔶 学习中, ≤3 → 🔴 薄弱, 0 sessions → ⬜ 未学习
+   - Status: ≥7 → ✅ 掌握, 4-6 → 🚧 学习中, ≤3 → 🔴 薄弱, 0 sessions → ⬜ 未学习
 3. **Recalculate** the `Domain Summary` table:
    - 已掌握 = count of ✅ sub-topics in that domain / total sub-topics in domain
    - 已学习 = count of non-⬜ sub-topics / total sub-topics
    - 平均分 = average score of all studied sub-topics in domain
-   - Domain status: all sub-topics ✅ → ✅ 掌握, any studied → 🔶 学习中 or 🔴 薄弱 (based on avg), none → ⬜ 未学习
+   - Domain status: all sub-topics ✅ → ✅ 掌握, any studied → 🚧 学习中 or 🔴 薄弱 (based on avg), none → ⬜ 未学习
 4. **Update** the `Last updated` timestamp
 5. **Update** the session counter `#` (auto-increment)
 6. **Update** the overall progress line: `总进度: X/45 知识点已掌握`
