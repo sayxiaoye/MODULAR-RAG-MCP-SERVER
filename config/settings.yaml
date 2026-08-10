@@ -48,3 +48,5 @@ ingestion:
   chunk_overlap: 200
   splitter: recursive
   batch_size: 100
+  chunk_refiner:
+    use_llm: false

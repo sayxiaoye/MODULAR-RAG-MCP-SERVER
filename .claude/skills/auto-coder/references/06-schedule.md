@@ -74,7 +74,7 @@
 | C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | file_integrity + SQLiteIntegrityChecker + WAL + 6个单元测试 |
 | C3 | Loader 抽象基类与 PDF Loader | [x] | 2026-08-10 | BaseLoader + PdfLoader + 图片占位符契约 + 5个单元测试 |
 | C4 | Splitter 集成（调用 Libs） | [x] | 2026-08-10 | DocumentChunker + 图片按需分发 + 6个单元测试 |
-| C5 | Transform 基类 + ChunkRefiner | [ ] | | |
+| C5 | Transform 基类 + ChunkRefiner | [x] | 2026-08-10 | BaseTransform + ChunkRefiner + TraceContext + 28个单元测试 |
 | C6 | MetadataEnricher | [ ] | | |
 | C7 | ImageCaptioner | [ ] | | |
 | C8 | DenseEncoder | [ ] | | |

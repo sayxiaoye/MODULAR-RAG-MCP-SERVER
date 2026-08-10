@@ -1984,7 +1984,7 @@ dashboard:
 | C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | file_integrity + SQLiteIntegrityChecker + WAL + 6个单元测试 |
 | C3 | Loader 抽象基类与 PDF Loader | [x] | 2026-08-10 | BaseLoader + PdfLoader + 图片占位符契约 + 5个单元测试 |
 | C4 | Splitter 集成（调用 Libs） | [x] | 2026-08-10 | DocumentChunker + 图片按需分发 + 6个单元测试 |
-| C5 | Transform 基类 + ChunkRefiner | [ ] | | |
+| C5 | Transform 基类 + ChunkRefiner | [x] | 2026-08-10 | BaseTransform + ChunkRefiner + TraceContext + 28个单元测试 |
 | C6 | MetadataEnricher | [ ] | | |
 | C7 | ImageCaptioner | [ ] | | |
 | C8 | DenseEncoder | [ ] | | |
@@ -2442,7 +2442,7 @@ dashboard:
   - **类型契约**：输出的 Chunk 对象符合 `core/types.py` 中的 Chunk 定义（可序列化、字段完整）
 - **测试方法**：`pytest -q tests/unit/test_document_chunker.py`（使用 FakeSplitter 隔离测试，无需真实 LLM/外部依赖）。
 
-### C5：Transform 抽象基类 + ChunkRefiner（规则去噪 + LLM 增强）
+### C5：Transform 抽象基类 + ChunkRefiner（规则去噪 + LLM 增强） ✅
 - **目标**：定义 `BaseTransform`；实现 `ChunkRefiner`：先做规则去噪，再通过LLM进行智能增强，并提供失败降级机制（LLM异常时回退到规则结果，不阻塞 ingestion）。
 - **前置条件**（必须准备）：
   - **必须配置LLM**：在 `config/settings.yaml` 中配置可用的LLM（provider/model/api_key）

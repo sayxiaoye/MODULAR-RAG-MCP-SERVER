@@ -1,0 +1,40 @@
+{
+  "typical_noise_scenario": {
+    "input": "Page 1 of 3\n\n正文内容保留。\n\n---\n\nPage 2 of 3",
+    "must_contain": ["正文内容保留"],
+    "must_not_contain": ["Page 1 of 3", "Page 2 of 3"]
+  },
+  "ocr_errors": {
+    "input": "Az ure 配置  说明  文档",
+    "must_contain": ["Az ure", "配置"],
+    "collapse_spaces": true
+  },
+  "page_header_footer": {
+    "input": "1 / 5\n章节标题\n内容段落",
+    "must_contain": ["章节标题", "内容段落"],
+    "must_not_contain": ["1 / 5"]
+  },
+  "excessive_whitespace": {
+    "input": "行一\n\n\n\n\n行二",
+    "must_contain": ["行一", "行二"],
+    "max_newline_run": 2
+  },
+  "format_markers": {
+    "input": "<!-- sidebar note -->\n# 标题\n段落",
+    "must_contain": ["# 标题", "段落"],
+    "must_not_contain": ["<!--"]
+  },
+  "clean_text": {
+    "input": "已经是干净的段落文本。",
+    "must_equal": "已经是干净的段落文本。"
+  },
+  "code_blocks": {
+    "input": "说明\n\n```python\ndef hi( ):\n    pass\n```\n\n结尾",
+    "must_contain": ["```python", "def hi( ):", "pass", "结尾"]
+  },
+  "mixed_noise": {
+    "input": "Page 3 of 10\n\n<!-- footnote -->\n核心   内容\n\n---",
+    "must_contain": ["核心", "内容"],
+    "must_not_contain": ["Page 3", "<!--"]
+  }
+}
