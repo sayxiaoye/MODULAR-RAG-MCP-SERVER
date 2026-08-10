@@ -23,6 +23,9 @@ dev = [
 rerank = [
     "sentence-transformers>=3.0",
 ]
+ingestion = [
+    "markitdown[pdf]>=0.1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
