@@ -1974,7 +1974,7 @@ dashboard:
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
-| B9 | Azure Vision LLM 实现 | [ ] | | |
+| B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
 #### 阶段 C：Ingestion Pipeline MVP
 
@@ -2319,7 +2319,7 @@ dashboard:
   - 接口设计支持图片预处理（压缩、格式转换）的扩展点。
 - **测试方法**：`pytest -q tests/unit/test_vision_llm_factory.py`。
 
-### B9：Azure Vision LLM 实现
+### B9：Azure Vision LLM 实现 ✅
 - **目标**：实现 `AzureVisionLLM`，支持通过 Azure OpenAI 调用 GPT-4o/GPT-4-Vision-Preview 进行图像理解。
 - **修改文件**：
   - `src/libs/llm/azure_vision_llm.py`

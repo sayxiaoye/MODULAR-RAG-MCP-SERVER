@@ -142,3 +142,13 @@ def _register_builtin_providers() -> None:
 
 
 _register_builtin_providers()
+
+
+def _register_builtin_vision_providers() -> None:
+    """注册 B9 阶段内置 Vision LLM Provider。"""
+    from libs.llm.azure_vision_llm import AzureVisionLLM
+
+    register_vision_llm_provider("azure", AzureVisionLLM)
+
+
+_register_builtin_vision_providers()
