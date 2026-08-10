@@ -1985,7 +1985,7 @@ dashboard:
 | C3 | Loader 抽象基类与 PDF Loader | [x] | 2026-08-10 | BaseLoader + PdfLoader + 图片占位符契约 + 5个单元测试 |
 | C4 | Splitter 集成（调用 Libs） | [x] | 2026-08-10 | DocumentChunker + 图片按需分发 + 6个单元测试 |
 | C5 | Transform 基类 + ChunkRefiner | [x] | 2026-08-10 | BaseTransform + ChunkRefiner + TraceContext + 28个单元测试 |
-| C6 | MetadataEnricher | [ ] | | |
+| C6 | MetadataEnricher | [x] | 2026-08-10 | MetadataEnricher + title/summary/tags + 9个契约测试 |
 | C7 | ImageCaptioner | [ ] | | |
 | C8 | DenseEncoder | [ ] | | |
 | C9 | SparseEncoder | [ ] | | |
@@ -2517,7 +2517,7 @@ dashboard:
     - 集成测试：验证系统可用性
     - 两者互补，缺一不可
 
-### C6：MetadataEnricher（规则增强 + 可选 LLM 增强 + 降级）
+### C6：MetadataEnricher（规则增强 + 可选 LLM 增强 + 降级） ✅
 - **目标**：实现元数据增强模块：提供规则增强的默认实现，并重点支持 LLM 增强（配置已就绪，LLM 开关打开）。利用 LLM 对 chunk 进行高质量的 title 生成、summary 摘要和 tags 提取。同时保留失败降级机制，确保不阻塞 ingestion。
 - **修改文件**：
   - `src/ingestion/transform/metadata_enricher.py`

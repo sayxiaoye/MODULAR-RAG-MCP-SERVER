@@ -50,3 +50,5 @@ ingestion:
   batch_size: 100
   chunk_refiner:
     use_llm: false
+  metadata_enricher:
+    use_llm: false

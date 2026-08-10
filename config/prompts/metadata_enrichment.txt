@@ -1,0 +1,4 @@
+Analyze the text chunk below and respond with JSON only using this schema:
+{"title": "short title", "summary": "one-sentence summary", "tags": ["tag1", "tag2"]}
+
+{text}
