@@ -71,7 +71,7 @@
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | C1 | 定义核心数据类型/契约（Document/Chunk/ChunkRecord） | [x] | 2026-08-10 | core/types + ImageMetadata + 6个单元测试 |
-| C2 | 文件完整性检查（SHA256） | [ ] | | |
+| C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | file_integrity + SQLiteIntegrityChecker + WAL + 6个单元测试 |
 | C3 | Loader 抽象基类与 PDF Loader | [ ] | | |
 | C4 | Splitter 集成（调用 Libs） | [ ] | | |
 | C5 | Transform 基类 + ChunkRefiner | [ ] | | |

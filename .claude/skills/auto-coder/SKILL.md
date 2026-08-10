@@ -64,7 +64,7 @@ Task markers:
 | Marker | Status |
 |--------|--------|
 | `[ ]` / `⬜` | Not started |
-| `[~]` / `🔶` / `(进行中)` | In progress |
+| `[~]` / `🚧` / `(进行中)` | In progress |
 | `[x]` / `✅` / `(已完成)` | Completed |
 
 ---
@@ -154,7 +154,10 @@ Round 3 still failing → STOP, show failure report to user
 
 ### 5. Persist
 
-1. **Update `DEV_SPEC.md`** (global file): change task marker `[ ]` → `[x]`
+1. **Update `DEV_SPEC.md`** (global file) 排期表对应行：
+   - 状态：`[ ]` → `[x]`
+   - **完成日期**：当天日期，格式 `YYYY-MM-DD`（与表中 A/B/C 阶段一致）
+   - **备注**：一行摘要，格式与既有行一致，例如 `模块名 + 核心类/接口 + N个单元测试`（从本次实现与测试结果提炼，勿空着）
 2. **Re-sync**: `python {{SKILL_ROOT}}/scripts/sync_spec.py --force`
 3. **Show summary & ask**:
 
