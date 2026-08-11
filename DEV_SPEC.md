@@ -1990,7 +1990,7 @@ dashboard:
 | C8 | DenseEncoder | [x] | 2026-08-11 | DenseEncoder + EmbeddingFactory + 7个单元测试 |
 | C9 | SparseEncoder | [x] | 2026-08-11 | SparseEncoder + SparseChunkStats + 7个单元测试 |
 | C10 | BatchProcessor | [x] | 2026-08-11 | BatchProcessor + 分批 Dense/Sparse + 6个单元测试 |
-| C11 | BM25Indexer（倒排索引+IDF计算） | [ ] | | |
+| C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | BM25Indexer + 倒排索引持久化 + 6个往返测试 |
 | C12 | VectorUpserter（幂等upsert） | [ ] | | |
 | C13 | ImageStorage（图片存储+SQLite索引） | [ ] | | |
 | C14 | Pipeline 编排（MVP 串起来） | [ ] | | |
@@ -2574,7 +2574,7 @@ dashboard:
 
 ---
 
-### C11：BM25Indexer（倒排索引构建与持久化）
+### C11：BM25Indexer（倒排索引构建与持久化） ✅
 - **目标**：实现 `bm25_indexer.py`：接收 SparseEncoder 的term statistics输出，计算IDF，构建倒排索引，并持久化到 `data/db/bm25/`。
 - **核心功能**：
   - 计算 IDF (Inverse Document Frequency)：`IDF(term) = log((N - df + 0.5) / (df + 0.5))`
