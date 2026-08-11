@@ -1991,7 +1991,7 @@ dashboard:
 | C9 | SparseEncoder | [x] | 2026-08-11 | SparseEncoder + SparseChunkStats + 7个单元测试 |
 | C10 | BatchProcessor | [x] | 2026-08-11 | BatchProcessor + 分批 Dense/Sparse + 6个单元测试 |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | BM25Indexer + 倒排索引持久化 + 6个往返测试 |
-| C12 | VectorUpserter（幂等upsert） | [ ] | | |
+| C12 | VectorUpserter（幂等upsert） | [x] | 2026-08-11 | VectorUpserter + 稳定 chunk_id + 6个幂等测试 |
 | C13 | ImageStorage（图片存储+SQLite索引） | [ ] | | |
 | C14 | Pipeline 编排（MVP 串起来） | [ ] | | |
 | C15 | 脚本入口 ingest.py | [ ] | | |
@@ -2590,7 +2590,7 @@ dashboard:
 - **测试方法**：`pytest -q tests/unit/test_bm25_indexer_roundtrip.py`。
 - **备注**：本任务完成Sparse路径的最后一环，为D3 (SparseRetriever) 提供可查询的BM25索引。
 
-### C12：VectorUpserter（向量存储与幂等性保证）
+### C12：VectorUpserter（向量存储与幂等性保证） ✅
 - **目标**：实现 `vector_upserter.py`：接收 DenseEncoder 的向量输出，生成稳定的 `chunk_id`，并调用 VectorStore 进行幂等写入。
 - **核心功能**：
   - 生成确定性 chunk_id：`hash(source_path + chunk_index + content_hash[:8])`
