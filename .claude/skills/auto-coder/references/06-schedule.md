@@ -79,7 +79,7 @@
 | C7 | ImageCaptioner | [x] | 2026-08-10 | ImageCaptioner + Vision mock + 降级标记 + 6个单元测试 |
 | C8 | DenseEncoder | [x] | 2026-08-11 | DenseEncoder + EmbeddingFactory + 7个单元测试 |
 | C9 | SparseEncoder | [x] | 2026-08-11 | SparseEncoder + SparseChunkStats + 7个单元测试 |
-| C10 | BatchProcessor | [ ] | | |
+| C10 | BatchProcessor | [x] | 2026-08-11 | BatchProcessor + 分批 Dense/Sparse + 6个单元测试 |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [ ] | | |
 | C12 | VectorUpserter（幂等upsert） | [ ] | | |
 | C13 | ImageStorage（图片存储+SQLite索引） | [ ] | | |
@@ -645,7 +645,7 @@
 - **验收标准**：输出结构可用于 bm25_indexer；对空文本有明确行为。
 - **测试方法**：`pytest -q tests/unit/test_sparse_encoder.py`。
 
-### C10：BatchProcessor（批处理编排）
+### C10：BatchProcessor（批处理编排） ✅
 - **目标**：实现 `batch_processor.py`：将 chunks 分 batch，驱动 dense/sparse 编码，记录批次耗时（为 trace 预留）。
 - **修改文件**：
   - `src/ingestion/embedding/batch_processor.py`
