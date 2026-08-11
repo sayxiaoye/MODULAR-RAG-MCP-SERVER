@@ -1993,7 +1993,7 @@ dashboard:
 | C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | BM25Indexer + 倒排索引持久化 + 6个往返测试 |
 | C12 | VectorUpserter（幂等upsert） | [x] | 2026-08-11 | VectorUpserter + 稳定 chunk_id + 6个幂等测试 |
 | C13 | ImageStorage（图片存储+SQLite索引） | [x] | 2026-08-11 | ImageStorage + SQLite image_index + 9个单元测试 |
-| C14 | Pipeline 编排（MVP 串起来） | [ ] | | |
+| C14 | Pipeline 编排（MVP 串起来） | [x] | 2026-08-11 | IngestionPipeline + 集成测试 5 项（Chroma/BM25/图片） |
 | C15 | 脚本入口 ingest.py | [ ] | | |
 
 #### 阶段 D：Retrieval MVP
@@ -2631,7 +2631,7 @@ dashboard:
   - 支持按 collection 批量查询
 - **测试方法**：`pytest -q tests/unit/test_image_storage.py`。
 
-### C14：Pipeline 编排（MVP 串起来）
+### C14：Pipeline 编排（MVP 串起来） ✅
 - **目标**：实现 `pipeline.py`：串行执行（integrity→load→split→transform→encode→store），并对失败步骤做清晰异常。
 - **修改文件**：
   - `src/ingestion/pipeline.py`
