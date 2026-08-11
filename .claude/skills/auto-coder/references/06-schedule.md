@@ -82,7 +82,7 @@
 | C10 | BatchProcessor | [x] | 2026-08-11 | BatchProcessor + 分批 Dense/Sparse + 6个单元测试 |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | BM25Indexer + 倒排索引持久化 + 6个往返测试 |
 | C12 | VectorUpserter（幂等upsert） | [x] | 2026-08-11 | VectorUpserter + 稳定 chunk_id + 6个幂等测试 |
-| C13 | ImageStorage（图片存储+SQLite索引） | [ ] | | |
+| C13 | ImageStorage（图片存储+SQLite索引） | [x] | 2026-08-11 | ImageStorage + SQLite image_index + 9个单元测试 |
 | C14 | Pipeline 编排（MVP 串起来） | [ ] | | |
 | C15 | 脚本入口 ingest.py | [ ] | | |
 
@@ -696,7 +696,7 @@
 - **测试方法**：`pytest -q tests/unit/test_vector_upserter_idempotency.py`。
 - **备注**：本任务完成Dense路径的最后一环，为D2 (DenseRetriever) 提供可查询的向量数据库。
 
-### C13：ImageStorage（图片文件存储与索引表契约）
+### C13：ImageStorage（图片文件存储与索引表契约） ✅
 - **目标**：实现 `image_storage.py`：保存图片到 `data/images/{collection}/`，并使用 **SQLite** 记录 image_id→path 映射。
 - **修改文件**：
   - `src/ingestion/storage/image_storage.py`
