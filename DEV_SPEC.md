@@ -1987,7 +1987,7 @@ dashboard:
 | C5 | Transform 基类 + ChunkRefiner | [x] | 2026-08-10 | BaseTransform + ChunkRefiner + TraceContext + 28个单元测试 |
 | C6 | MetadataEnricher | [x] | 2026-08-10 | MetadataEnricher + title/summary/tags + 9个契约测试 |
 | C7 | ImageCaptioner | [x] | 2026-08-10 | ImageCaptioner + Vision mock + 降级标记 + 6个单元测试 |
-| C8 | DenseEncoder | [ ] | | |
+| C8 | DenseEncoder | [x] | 2026-08-11 | DenseEncoder + EmbeddingFactory + 7个单元测试 |
 | C9 | SparseEncoder | [ ] | | |
 | C10 | BatchProcessor | [ ] | | |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [ ] | | |
@@ -2539,7 +2539,7 @@ dashboard:
   - 降级模式：当配置禁用或异常时，chunk 保留 image_refs，但不生成 caption 且标记 `has_unprocessed_images`。
 - **测试方法**：`pytest -q tests/unit/test_image_captioner_fallback.py`。
 
-### C8：DenseEncoder（依赖 libs.embedding）
+### C8：DenseEncoder（依赖 libs.embedding） ✅
 - **目标**：实现 `dense_encoder.py`，把 chunks.text 批量送入 `BaseEmbedding`。
 - **修改文件**：
   - `src/ingestion/embedding/dense_encoder.py`
