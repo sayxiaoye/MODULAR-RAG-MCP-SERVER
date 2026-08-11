@@ -1988,7 +1988,7 @@ dashboard:
 | C6 | MetadataEnricher | [x] | 2026-08-10 | MetadataEnricher + title/summary/tags + 9个契约测试 |
 | C7 | ImageCaptioner | [x] | 2026-08-10 | ImageCaptioner + Vision mock + 降级标记 + 6个单元测试 |
 | C8 | DenseEncoder | [x] | 2026-08-11 | DenseEncoder + EmbeddingFactory + 7个单元测试 |
-| C9 | SparseEncoder | [ ] | | |
+| C9 | SparseEncoder | [x] | 2026-08-11 | SparseEncoder + SparseChunkStats + 7个单元测试 |
 | C10 | BatchProcessor | [ ] | | |
 | C11 | BM25Indexer（倒排索引+IDF计算） | [ ] | | |
 | C12 | VectorUpserter（幂等upsert） | [ ] | | |
@@ -2547,7 +2547,7 @@ dashboard:
 - **验收标准**：encoder 输出向量数量与 chunks 数量一致，维度一致。
 - **测试方法**：`pytest -q tests/unit/test_dense_encoder.py`。
 
-### C9：SparseEncoder（BM25 统计与输出契约）
+### C9：SparseEncoder（BM25 统计与输出契约） ✅
 - **目标**：实现 `sparse_encoder.py`：对 chunks 建立 BM25 所需统计（可先仅输出 term weights 结构，索引落地下一步做）。
 - **修改文件**：
   - `src/ingestion/embedding/sparse_encoder.py`
