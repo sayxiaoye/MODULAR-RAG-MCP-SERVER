@@ -2000,7 +2000,7 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| D1 | QueryProcessor（关键词提取 + filters） | [ ] | | |
+| D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-08-12 | QueryProcessor + ProcessedQuery + 10个单元测试 |
 | D2 | DenseRetriever（调用 VectorStore.query） | [ ] | | |
 | D3 | SparseRetriever（BM25 查询） | [ ] | | |
 | D4 | RRF Fusion | [ ] | | |
@@ -2664,7 +2664,7 @@ dashboard:
 
 ## 阶段 D：Retrieval MVP（目标：能 query 并返回 Top-K chunks）
 
-### D1：QueryProcessor（关键词提取 + filters 结构）
+### D1：QueryProcessor（关键词提取 + filters 结构） ✅
 - **目标**：实现 `query_processor.py`：关键词提取（先规则/分词），并解析通用 filters 结构（可空实现）。
 - **修改文件**：
   - `src/core/query_engine/query_processor.py`
