@@ -281,6 +281,62 @@ class ChunkRecord:
         return record
 
 
+@dataclass(frozen=True)
+class RetrievalResult:
+    """检索链路统一结果载体，供 Dense/Sparse/Hybrid 与 MCP 返回组装复用。"""
+
+    chunk_id: str
+    score: float
+    text: str
+    metadata: dict[str, Any]
+
+    def validate(self) -> None:
+        if not isinstance(self.chunk_id, str) or not self.chunk_id.strip():
+            raise TypesError("RetrievalResult.chunk_id 必须是非空字符串")
+        if not isinstance(self.score, (int, float)):
+            raise TypesError("RetrievalResult.score 必须是数值")
+        if not isinstance(self.text, str):
+            raise TypesError("RetrievalResult.text 必须是字符串")
+        if not isinstance(self.metadata, dict):
+            raise TypesError("RetrievalResult.metadata 必须是 dict")
+
+    def to_dict(self) -> dict[str, Any]:
+        self.validate()
+        return {
+            "chunk_id": self.chunk_id,
+            "score": float(self.score),
+            "text": self.text,
+            "metadata": dict(self.metadata),
+        }
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), ensure_ascii=False)
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> RetrievalResult:
+        payload = _require_mapping(data, "RetrievalResult")
+        chunk_id = payload.get("chunk_id", payload.get("id"))
+        if not isinstance(chunk_id, str) or not chunk_id.strip():
+            raise TypesError("RetrievalResult 缺少合法 chunk_id/id")
+        score = payload.get("score")
+        if not isinstance(score, (int, float)):
+            raise TypesError("RetrievalResult 缺少合法 score")
+        text = payload.get("text")
+        if not isinstance(text, str):
+            raise TypesError("RetrievalResult 缺少合法 text")
+        metadata = payload.get("metadata", {})
+        if not isinstance(metadata, Mapping):
+            raise TypesError("RetrievalResult.metadata 必须是 mapping")
+        result = cls(
+            chunk_id=chunk_id.strip(),
+            score=float(score),
+            text=text,
+            metadata=dict(metadata),
+        )
+        result.validate()
+        return result
+
+
 def documents_to_json(documents: Sequence[Document]) -> str:
     """批量 Document 序列化为 JSON 数组字符串。"""
     return json.dumps([doc.to_dict() for doc in documents], ensure_ascii=False)

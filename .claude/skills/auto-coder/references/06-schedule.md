@@ -91,7 +91,7 @@
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-08-12 | QueryProcessor + ProcessedQuery + 10个单元测试 |
-| D2 | DenseRetriever（调用 VectorStore.query） | [ ] | | |
+| D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | RetrievalResult + DenseRetriever + 6个单元测试 |
 | D3 | SparseRetriever（BM25 查询） | [ ] | | |
 | D4 | RRF Fusion | [ ] | | |
 | D5 | HybridSearch 编排 | [ ] | | |
@@ -762,7 +762,7 @@
 - **验收标准**：对输入 query 输出 `keywords` 非空（可根据停用词策略），filters 为 dict。
 - **测试方法**：`pytest -q tests/unit/test_query_processor.py`。
 
-### D2：DenseRetriever（调用 VectorStore.query）
+### D2：DenseRetriever（调用 VectorStore.query） ✅
 - **目标**：实现 `dense_retriever.py`，组合 `EmbeddingClient`（query 向量化）+ `VectorStore`（向量检索），完成语义召回。
 - **前置任务**：
   1. 需先在 `src/core/types.py` 中定义 `RetrievalResult` 类型（包含 `chunk_id`, `score`, `text`, `metadata` 字段）
