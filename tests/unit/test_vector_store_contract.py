@@ -69,6 +69,28 @@ class InMemoryVectorStore(BaseVectorStore):
         results = [item[1] for item in scored[:top_k]]
         return self._validate_query_results(results)
 
+    def get_by_ids(
+        self,
+        ids: Sequence[str],
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 ID 从内存字典批量读取记录。"""
+        if not ids:
+            return []
+        results: list[dict[str, Any]] = []
+        for record_id in ids:
+            record = self._records.get(str(record_id))
+            if record is None:
+                continue
+            results.append(
+                {
+                    "id": record["id"],
+                    "text": record["text"],
+                    "metadata": dict(record["metadata"]),
+                }
+            )
+        return self._validate_get_by_ids_results(results)
+
 
 def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     """计算两向量余弦相似度，供 Fake 检索排序。"""
@@ -145,6 +167,31 @@ class TestVectorStoreContract:
         store = InMemoryVectorStore(load_settings().vector_store)
         with pytest.raises(VectorStoreError, match="dense_vector"):
             store.upsert([{"id": "x", "text": "t", "metadata": {}}])
+
+    def test_get_by_ids_returns_matching_records(self) -> None:
+        """get_by_ids 应返回指定 ID 的 text 与 metadata。"""
+        store = InMemoryVectorStore(load_settings().vector_store)
+        store.upsert(
+            [
+                {
+                    "id": "chunk-001",
+                    "text": "Azure 配置指南",
+                    "metadata": {"source_path": "guide.pdf", "collection": "docs"},
+                    "dense_vector": [1.0, 0.0, 0.0],
+                },
+                {
+                    "id": "chunk-002",
+                    "text": "其他主题",
+                    "metadata": {"source_path": "other.pdf", "collection": "docs"},
+                    "dense_vector": [0.0, 1.0, 0.0],
+                },
+            ]
+        )
+        results = store.get_by_ids(["chunk-001", "missing"])
+        assert len(results) == 1
+        assert results[0]["id"] == "chunk-001"
+        assert results[0]["text"] == "Azure 配置指南"
+        assert results[0]["metadata"]["source_path"] == "guide.pdf"
 
 
 @pytest.mark.unit

@@ -105,3 +105,37 @@ class ChromaStore(BaseVectorStore):
                 }
             )
         return self._validate_query_results(results)
+
+    def get_by_ids(
+        self,
+        ids: Sequence[str],
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 ID 批量读取 documents 与 metadatas，供稀疏检索回填正文。"""
+        if not ids:
+            return []
+        id_list = [str(record_id) for record_id in ids]
+        try:
+            raw = self._collection.get(
+                ids=id_list,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] get_by_ids 失败: {exc}") from exc
+
+        raw_ids = raw.get("ids", [])
+        documents = raw.get("documents", [])
+        metadatas = raw.get("metadatas", [])
+
+        results: list[dict[str, Any]] = []
+        for index, record_id in enumerate(raw_ids):
+            doc_text = documents[index] if documents else ""
+            metadata = metadatas[index] if metadatas else {}
+            results.append(
+                {
+                    "id": str(record_id),
+                    "text": str(doc_text or ""),
+                    "metadata": dict(metadata or {}),
+                }
+            )
+        return self._validate_get_by_ids_results(results)

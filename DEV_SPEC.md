@@ -2002,7 +2002,7 @@ dashboard:
 |---------|---------|------|---------|------|
 | D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-08-12 | QueryProcessor + ProcessedQuery + 10个单元测试 |
 | D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | RetrievalResult + DenseRetriever + 6个单元测试 |
-| D3 | SparseRetriever（BM25 查询） | [ ] | | |
+| D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | SparseRetriever + get_by_ids + 8个单元测试 |
 | D4 | RRF Fusion | [ ] | | |
 | D5 | HybridSearch 编排 | [ ] | | |
 | D6 | Reranker（Core 层编排 + Fallback） | [ ] | | |
@@ -2695,7 +2695,7 @@ dashboard:
   - mock EmbeddingClient 和 VectorStore 时能正确编排调用
 - **测试方法**：`pytest -q tests/unit/test_dense_retriever.py`（mock embedding + vector store）。
 
-### D3：SparseRetriever（BM25 查询）
+### D3：SparseRetriever（BM25 查询） ✅
 - **目标**：实现 `sparse_retriever.py`：从 `data/db/bm25/` 载入索引并查询。
 - **前置任务**：需在 `BaseVectorStore` 和 `ChromaStore` 中添加 `get_by_ids()` 方法，用于根据 chunk_id 批量获取 text 和 metadata
 - **修改文件**：

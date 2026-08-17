@@ -56,6 +56,13 @@ class RecordingVectorStore(BaseVectorStore):
         self.last_filters = dict(filters) if filters else None
         return list(self._results[:top_k])
 
+    def get_by_ids(
+        self,
+        ids: Sequence[str],
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        return []
+
 
 @pytest.fixture(autouse=True)
 def _reset_factories() -> None:

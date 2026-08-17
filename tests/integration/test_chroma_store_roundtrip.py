@@ -120,6 +120,31 @@ class TestChromaStoreRoundtrip:
         assert results[0]["id"] == "persist-1"
         assert results[0]["text"] == "持久化文本"
 
+    def test_get_by_ids_returns_stored_records(self, chroma_temp_dir: str) -> None:
+        """get_by_ids 应批量返回已写入的 text 与 metadata。"""
+        store = ChromaStore(_vector_store_settings(chroma_temp_dir, "get_by_ids_test"))
+        store.upsert(
+            [
+                {
+                    "id": "chunk-001",
+                    "text": "Azure 配置指南",
+                    "metadata": {"source_path": "guide.pdf", "collection": "docs"},
+                    "dense_vector": [1.0, 0.0, 0.0],
+                },
+                {
+                    "id": "chunk-002",
+                    "text": "其他主题",
+                    "metadata": {"source_path": "other.pdf", "collection": "docs"},
+                    "dense_vector": [0.0, 1.0, 0.0],
+                },
+            ]
+        )
+        results = store.get_by_ids(["chunk-001", "missing-id"])
+        assert len(results) == 1
+        assert results[0]["id"] == "chunk-001"
+        assert results[0]["text"] == "Azure 配置指南"
+        assert results[0]["metadata"]["source_path"] == "guide.pdf"
+
 
 @pytest.mark.integration
 class TestChromaStoreFactoryRouting:

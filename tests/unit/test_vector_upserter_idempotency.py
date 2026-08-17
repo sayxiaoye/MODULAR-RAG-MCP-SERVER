@@ -47,6 +47,13 @@ class RecordingVectorStore(BaseVectorStore):
     ) -> list[dict[str, Any]]:
         return []
 
+    def get_by_ids(
+        self,
+        ids: Sequence[str],
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        return []
+
     @property
     def record_count(self) -> int:
         return len(self._records)

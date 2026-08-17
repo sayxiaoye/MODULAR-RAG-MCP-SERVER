@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 # upsert 记录与 query 结果必须包含的字段（C1 ChunkRecord / D2 RetrievalResult 对齐）
 _REQUIRED_UPSERT_KEYS = frozenset({"id", "text", "metadata", "dense_vector"})
 _REQUIRED_QUERY_KEYS = frozenset({"id", "score", "text", "metadata"})
+_REQUIRED_GET_BY_IDS_KEYS = frozenset({"id", "text", "metadata"})
 
 
 class VectorStoreError(Exception):
@@ -50,6 +51,23 @@ class BaseVectorStore(ABC):
 
         Returns:
             结果列表，每项含 id、score、text、metadata 字段。
+        """
+
+    @abstractmethod
+    def get_by_ids(
+        self,
+        ids: Sequence[str],
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        按 chunk_id 批量获取文本与 metadata（供 SparseRetriever 回填正文）。
+
+        Args:
+            ids: chunk_id 列表。
+            trace: 可选追踪上下文。
+
+        Returns:
+            记录列表，每项含 id、text、metadata 字段（顺序不保证与输入一致）。
         """
 
     def _validate_upsert_records(
@@ -105,4 +123,21 @@ class BaseVectorStore(ABC):
                 )
             if not isinstance(item["metadata"], Mapping):
                 raise VectorStoreError(f"query 结果[{index}].metadata 必须是 mapping")
+        return results
+
+    def _validate_get_by_ids_results(
+        self,
+        results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """校验 get_by_ids 输出契约。"""
+        for index, item in enumerate(results):
+            if not isinstance(item, dict):
+                raise VectorStoreError(f"get_by_ids 结果[{index}] 必须是 dict")
+            missing = _REQUIRED_GET_BY_IDS_KEYS - set(item.keys())
+            if missing:
+                raise VectorStoreError(
+                    f"get_by_ids 结果[{index}] 缺少字段: {', '.join(sorted(missing))}"
+                )
+            if not isinstance(item["metadata"], Mapping):
+                raise VectorStoreError(f"get_by_ids 结果[{index}].metadata 必须是 mapping")
         return results
