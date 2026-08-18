@@ -2006,7 +2006,7 @@ dashboard:
 | D4 | RRF Fusion | [x] | 2026-08-17 | RRFFusion + 10个单元测试 |
 | D5 | HybridSearch 编排 | [x] | 2026-08-18 | HybridSearch + 8个集成测试 |
 | D6 | Reranker（Core 层编排 + Fallback） | [x] | 2026-08-18 | Reranker + RerankResult + 8个单元测试 |
-| D7 | 脚本入口 query.py（查询可用） | [ ] | | |
+| D7 | 脚本入口 query.py（查询可用） | [x] | 2026-08-18 | query.py CLI + 8个单元测试 |
 
 #### 阶段 E：MCP Server 层与 Tools
 
@@ -2069,13 +2069,13 @@ dashboard:
 | 阶段 A | 3 | 3 | 100% |
 | 阶段 B | 16 | 16 | 100% |
 | 阶段 C | 15 | 15 | 100% |
-| 阶段 D | 7 | 6 | 86% |
+| 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 0 | 0% |
 | 阶段 F | 5 | 0 | 0% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **68** | **40** | **59%** |
+| **总计** | **68** | **41** | **60%** |
 
 
 ---
@@ -2753,7 +2753,7 @@ dashboard:
 - **验收标准**：模拟后端异常时不影响最终返回，且标记 fallback=true。
 - **测试方法**：`pytest -q tests/unit/test_reranker_fallback.py`。
 
-### D7：脚本入口 query.py（查询可用）
+### D7：脚本入口 query.py（查询可用） ✅
 - **目标**：实现 `scripts/query.py`，作为在线查询的命令行入口，调用完整的 HybridSearch + Reranker 流程并输出检索结果。
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）
 - **修改文件**：
