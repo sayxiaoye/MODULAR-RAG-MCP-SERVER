@@ -94,7 +94,7 @@
 | D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | RetrievalResult + DenseRetriever + 6个单元测试 |
 | D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | SparseRetriever + get_by_ids + 8个单元测试 |
 | D4 | RRF Fusion | [x] | 2026-08-17 | RRFFusion + 10个单元测试 |
-| D5 | HybridSearch 编排 | [ ] | | |
+| D5 | HybridSearch 编排 | [x] | 2026-08-18 | HybridSearch + 8个集成测试 |
 | D6 | Reranker（Core 层编排 + Fallback） | [ ] | | |
 | D7 | 脚本入口 query.py（查询可用） | [ ] | | |
 
@@ -817,7 +817,7 @@
 - **验收标准**：对构造的排名输入输出 deterministic；k 参数可配置。
 - **测试方法**：`pytest -q tests/unit/test_fusion_rrf.py`。
 
-### D5：HybridSearch 编排
+### D5：HybridSearch 编排 ✅
 - **目标**：实现 `hybrid_search.py`：编排 Dense + Sparse + Fusion 的完整混合检索流程，并集成 Metadata 过滤逻辑。
 - **前置依赖**：D1（QueryProcessor）、D2（DenseRetriever）、D3（SparseRetriever）、D4（Fusion）
 - **修改文件**：
