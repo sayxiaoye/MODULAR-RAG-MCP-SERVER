@@ -95,7 +95,7 @@
 | D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | SparseRetriever + get_by_ids + 8个单元测试 |
 | D4 | RRF Fusion | [x] | 2026-08-17 | RRFFusion + 10个单元测试 |
 | D5 | HybridSearch 编排 | [x] | 2026-08-18 | HybridSearch + 8个集成测试 |
-| D6 | Reranker（Core 层编排 + Fallback） | [ ] | | |
+| D6 | Reranker（Core 层编排 + Fallback） | [x] | 2026-08-18 | Reranker + RerankResult + 8个单元测试 |
 | D7 | 脚本入口 query.py（查询可用） | [ ] | | |
 
 #### 阶段 E：MCP Server 层与 Tools
@@ -159,13 +159,13 @@
 | 阶段 A | 3 | 3 | 100% |
 | 阶段 B | 16 | 16 | 100% |
 | 阶段 C | 15 | 15 | 100% |
-| 阶段 D | 7 | 5 | 71% |
+| 阶段 D | 7 | 6 | 86% |
 | 阶段 E | 6 | 0 | 0% |
 | 阶段 F | 5 | 0 | 0% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **68** | **39** | **57%** |
+| **总计** | **68** | **40** | **59%** |
 
 
 ---
@@ -834,7 +834,7 @@
   - Dense/Sparse 任一路径失败时能降级到单路结果
 - **测试方法**：`pytest -q tests/integration/test_hybrid_search.py`。
 
-### D6：Reranker（Core 层编排 + fallback）
+### D6：Reranker（Core 层编排 + fallback） ✅
 - **目标**：实现 `core/query_engine/reranker.py`：接入 `libs.reranker` 后端，失败/超时回退 fusion 排名。
 - **修改文件**：
   - `src/core/query_engine/reranker.py`
