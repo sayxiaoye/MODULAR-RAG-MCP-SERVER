@@ -159,7 +159,9 @@ Round 3 still failing → STOP, show failure report to user
    - **完成日期**：当天日期，格式 `YYYY-MM-DD`（与表中 A/B/C 阶段一致）
    - **备注**：一行摘要，格式与既有行一致，例如 `模块名 + 核心类/接口 + N个单元测试`（从本次实现与测试结果提炼，勿空着）
    - **详情标题**：在 `DEV_SPEC.md` 中该任务的 `### {ID}：…` 行末追加 ` ✅`
+   - **不要手改** `### 📈 总体进度`：那是派生表，由下一步 sync 根据进度跟踪表的 `[x]` 自动重算
 2. **Re-sync**: `python {{SKILL_ROOT}}/scripts/sync_spec.py --force`
+   - 脚本会按进度跟踪表重算「📈 总体进度」（各阶段已完成数 / 百分比），写回 `DEV_SPEC.md` 再切到 `references/`
 3. **Show summary & ask**:
 
 ```
