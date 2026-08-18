@@ -2003,7 +2003,7 @@ dashboard:
 | D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-08-12 | QueryProcessor + ProcessedQuery + 10个单元测试 |
 | D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | RetrievalResult + DenseRetriever + 6个单元测试 |
 | D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | SparseRetriever + get_by_ids + 8个单元测试 |
-| D4 | RRF Fusion | [ ] | | |
+| D4 | RRF Fusion | [x] | 2026-08-17 | RRFFusion + 10个单元测试 |
 | D5 | HybridSearch 编排 | [ ] | | |
 | D6 | Reranker（Core 层编排 + Fallback） | [ ] | | |
 | D7 | 脚本入口 query.py（查询可用） | [ ] | | |
@@ -2719,7 +2719,7 @@ dashboard:
   - 返回结果包含完整的 text 和 metadata
 - **测试方法**：`pytest -q tests/unit/test_sparse_retriever.py`。
 
-### D4：Fusion（RRF 实现）
+### D4：Fusion（RRF 实现） ✅
 - **目标**：实现 `fusion.py`：RRF 融合 dense/sparse 排名并输出统一排序。
 - **修改文件**：
   - `src/core/query_engine/fusion.py`
