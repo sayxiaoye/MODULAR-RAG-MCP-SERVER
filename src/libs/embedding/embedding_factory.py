@@ -67,12 +67,14 @@ class EmbeddingFactory:
 def _register_builtin_providers() -> None:
     """注册 B7 阶段内置 Embedding Provider。"""
     from libs.embedding.azure_embedding import AzureEmbedding
+    from libs.embedding.llamacpp_embedding import LlamaCppEmbedding
     from libs.embedding.ollama_embedding import OllamaEmbedding
     from libs.embedding.openai_embedding import OpenAIEmbedding
 
     register_embedding_provider("openai", OpenAIEmbedding)
     register_embedding_provider("azure", AzureEmbedding)
     register_embedding_provider("ollama", OllamaEmbedding)
+    register_embedding_provider("llamacpp", LlamaCppEmbedding)
 
 
 _register_builtin_providers()

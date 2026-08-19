@@ -63,8 +63,8 @@
 | B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
-| B7.9 | LlamaCpp LLM 实现 | [ ] | — | 待开发：LlamaCppLLM + OpenAI-compat + 工厂注册 + 单测 |
-| B7.10 | LlamaCpp Embedding 实现 | [ ] | — | 待开发：LlamaCppEmbedding + 工厂注册 + 单测 |
+| B7.9 | LlamaCpp LLM 实现 | [x] | 2026-08-19 | LlamaCppLLM + 工厂注册 + 4个单元测试 |
+| B7.10 | LlamaCpp Embedding 实现 | [x] | 2026-08-19 | LlamaCppEmbedding + 工厂注册 + 5个单元测试 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
@@ -159,7 +159,7 @@
 | 阶段 | 总任务数 | 已完成 | 进度 |
 |------|---------|--------|------|
 | 阶段 A | 3 | 3 | 100% |
-| 阶段 B | 16 | 16 | 100% |
+| 阶段 B | 18 | 18 | 100% |
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 0 | 0% |
@@ -167,7 +167,7 @@
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **68** | **41** | **60%** |
+| **总计** | **70** | **43** | **61%** |
 
 
 ---
@@ -396,20 +396,36 @@
   - 提供超时/失败回退信号（供 Core 层 `D6` fallback 使用）。
 - **测试方法**：`pytest -q tests/unit/test_cross_encoder_reranker.py`。
 
-### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ⏳
-- **目标**：新增 `llamacpp_llm.py`，通过 `llama-server` OpenAI 兼容 API 调用本地 GGUF。
-- **配置参考**：`.github/skills/setup/references/provider_profiles.md`
+### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ✅
+- **目标**：新增 `llamacpp_llm.py`，通过 `llama-server` 的 OpenAI 兼容 `/v1/chat/completions` 调用本地 GGUF 模型。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp LLM）
 - **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
-- **修改文件**：`src/libs/llm/llamacpp_llm.py`、`llm_factory.py`、`tests/unit/test_llamacpp_llm.py`
-- **验收标准**：`provider=llamacpp` 可创建；默认 `http://localhost:8080/v1`；api_key 可省略。
-- **测试方法**：`pytest -q tests/unit/test_llamacpp_llm.py`
+- **修改文件**：
+  - `src/libs/llm/llamacpp_llm.py`（继承 `OpenAICompatibleLLM`，覆盖 `_resolve_api_key` 使 Key 可省略）
+  - `src/libs/llm/llm_factory.py`（注册 `llamacpp`）
+  - `tests/unit/test_llamacpp_llm.py`（mock HTTP）
+- **验收标准**：
+  - `provider=llamacpp` 时 `LLMFactory` 可创建。
+  - 默认 `base_url` 为 `http://localhost:8080/v1`；`api_key` 可省略。
+  - 错误信息包含 `[llamacpp]` 前缀与 llama-server 运维提示。
+  - 不删除 Ollama；不实现 LlamaCpp Vision。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_llm.py`。
 
 ### B7.10：LlamaCpp Embedding 实现 ⏳
-- **目标**：新增 `llamacpp_embedding.py`，建议独立 embedding 端口（8081）。
-- **配置参考**：`.github/skills/setup/references/provider_profiles.md`
+- **目标**：新增 `llamacpp_embedding.py`，通过 `/v1/embeddings` 调用独立 embedding 实例（建议端口 8081）。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp Embedding）
 - **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
-- **修改文件**：`src/libs/embedding/llamacpp_embedding.py`、`embedding_factory.py`、`tests/unit/test_llamacpp_embedding.py`
-- **测试方法**：`pytest -q tests/unit/test_llamacpp_embedding.py`
+- **修改文件**：
+  - `src/libs/embedding/llamacpp_embedding.py`
+  - `src/libs/embedding/embedding_factory.py`
+  - `tests/unit/test_llamacpp_embedding.py`
+  - `tests/unit/test_config_loading.py`（默认 provider 断言，与 B7.9 一并改）
+  - `tests/integration/test_chunk_refiner_llm.py`（探测 `/v1/models`）
+- **验收标准**：
+  - `provider=llamacpp` 时 `EmbeddingFactory` 可创建。
+  - 支持批量 `embed(texts)`；`dimensions` 与模型一致；若服务端不支持 `dimensions` 则不传该字段。
+  - 换模型后需清空 Chroma 并重跑 ingestion。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_embedding.py`。
 
 ### B8：Vision LLM 抽象接口与工厂集成 ✅
 - **目标**：定义 `BaseVisionLLM` 抽象接口，扩展 `LLMFactory` 支持 Vision LLM 创建，为 C7 的 ImageCaptioner 提供底层抽象。

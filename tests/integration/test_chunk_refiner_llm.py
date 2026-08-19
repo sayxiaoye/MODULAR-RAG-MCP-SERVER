@@ -46,25 +46,41 @@ def _settings_with_ingestion(**overrides: object) -> Settings:
     )
 
 
-def _ollama_reachable(base_url: str) -> bool:
+def _local_llm_reachable(provider: str, base_url: str) -> bool:
+    """探测本地 LLM 服务是否可达（Ollama 或 llama-server）。"""
+    provider_key = provider.strip().lower()
+    base = base_url.rstrip("/")
     try:
-        response = httpx.get(f"{base_url.rstrip('/')}/api/tags", timeout=3.0)
+        if provider_key == "ollama":
+            response = httpx.get(f"{base}/api/tags", timeout=3.0)
+        elif provider_key == "llamacpp":
+            response = httpx.get(f"{base}/models", timeout=3.0)
+        else:
+            return True
         return response.status_code == 200
     except httpx.HTTPError:
         return False
 
 
+def _default_local_llm_base_url(provider: str) -> str:
+    """返回各本地 Provider 的默认 base_url。"""
+    if provider.strip().lower() == "ollama":
+        return "http://localhost:11434"
+    return "http://localhost:8080/v1"
+
+
 @pytest.mark.integration
 class TestChunkRefinerLLMIntegration:
-    """真实 LLM 精炼与无效配置降级（需本地 Ollama 或可用 API）。"""
+    """真实 LLM 精炼与无效配置降级（需本地 Ollama / LlamaCpp 或可用 API）。"""
 
-    def test_real_llm_refinement_when_ollama_available(self) -> None:
+    def test_real_llm_refinement_when_local_llm_available(self) -> None:
         settings = load_settings()
-        if settings.llm.provider.lower() != "ollama":
-            pytest.skip("当前 settings 非 ollama，跳过真实 LLM 集成测试")
-        base_url = settings.llm.base_url or "http://localhost:11434"
-        if not _ollama_reachable(base_url):
-            pytest.skip(f"Ollama 不可达: {base_url}")
+        provider = settings.llm.provider.lower()
+        if provider not in {"ollama", "llamacpp"}:
+            pytest.skip("当前 settings 非本地 LLM（ollama/llamacpp），跳过真实 LLM 集成测试")
+        base_url = settings.llm.base_url or _default_local_llm_base_url(provider)
+        if not _local_llm_reachable(provider, base_url):
+            pytest.skip(f"本地 LLM 不可达: {provider} @ {base_url}")
 
         noisy = "Page 1 of 5\n\n<!-- noise -->\nAzure  配置   说明\n\n---"
         refiner = ChunkRefiner(settings)
@@ -114,9 +130,10 @@ class TestChunkRefinerLLMIntegration:
     def test_llm_factory_create_with_valid_settings(self) -> None:
         """验收前置：settings 中的 LLM 配置可被工厂解析（不强制联网）。"""
         settings = load_settings()
-        if settings.llm.provider.lower() == "ollama":
-            base_url = settings.llm.base_url or "http://localhost:11434"
-            if not _ollama_reachable(base_url):
-                pytest.skip("Ollama 不可达，跳过工厂创建校验")
+        provider = settings.llm.provider.lower()
+        if provider in {"ollama", "llamacpp"}:
+            base_url = settings.llm.base_url or _default_local_llm_base_url(provider)
+            if not _local_llm_reachable(provider, base_url):
+                pytest.skip(f"本地 LLM 不可达: {provider} @ {base_url}")
         llm = LLMFactory.create(settings)
         assert llm is not None

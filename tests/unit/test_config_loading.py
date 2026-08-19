@@ -18,8 +18,8 @@ class TestLoadSettings:
     def test_load_default_settings(self) -> None:
         """默认 config/settings.yaml 应包含全部必填字段并能通过校验。"""
         settings = load_settings()
-        assert settings.llm.provider == "ollama"
-        assert settings.embedding.provider == "ollama"
+        assert settings.llm.provider == "llamacpp"
+        assert settings.embedding.provider == "llamacpp"
         assert settings.vector_store.provider == "chroma"
         assert settings.retrieval.rrf_k == 60
 

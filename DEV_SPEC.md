@@ -1978,7 +1978,7 @@ dashboard:
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
 | B7.9 | LlamaCpp LLM 实现 | [x] | 2026-08-19 | LlamaCppLLM + 工厂注册 + 4个单元测试 |
-| B7.10 | LlamaCpp Embedding 实现 | [ ] | — | 待开发：LlamaCppEmbedding + 工厂注册 + 单测 |
+| B7.10 | LlamaCpp Embedding 实现 | [x] | 2026-08-19 | LlamaCppEmbedding + 工厂注册 + 5个单元测试 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
@@ -2325,7 +2325,7 @@ dashboard:
   - 不删除 Ollama；不实现 LlamaCpp Vision。
 - **测试方法**：`pytest -q tests/unit/test_llamacpp_llm.py`。
 
-### B7.10：LlamaCpp Embedding 实现 ⏳
+### B7.10：LlamaCpp Embedding 实现 ✅
 - **目标**：新增 `llamacpp_embedding.py`，通过 `/v1/embeddings` 调用独立 embedding 实例（建议端口 8081）。
 - **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp Embedding）
 - **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
