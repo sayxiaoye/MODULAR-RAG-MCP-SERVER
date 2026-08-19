@@ -1977,7 +1977,7 @@ dashboard:
 | B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
-| B7.9 | LlamaCpp LLM 实现 | [ ] | — | 待开发：LlamaCppLLM + OpenAI-compat + 工厂注册 + 单测 |
+| B7.9 | LlamaCpp LLM 实现 | [x] | 2026-08-19 | LlamaCppLLM + 工厂注册 + 4个单元测试 |
 | B7.10 | LlamaCpp Embedding 实现 | [ ] | — | 待开发：LlamaCppEmbedding + 工厂注册 + 单测 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
@@ -2073,7 +2073,7 @@ dashboard:
 | 阶段 | 总任务数 | 已完成 | 进度 |
 |------|---------|--------|------|
 | 阶段 A | 3 | 3 | 100% |
-| 阶段 B | 16 | 16 | 100% |
+| 阶段 B | 18 | 17 | 94% |
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 0 | 0% |
@@ -2081,7 +2081,7 @@ dashboard:
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **68** | **41** | **60%** |
+| **总计** | **70** | **42** | **60%** |
 
 
 ---
@@ -2310,7 +2310,7 @@ dashboard:
   - 提供超时/失败回退信号（供 Core 层 `D6` fallback 使用）。
 - **测试方法**：`pytest -q tests/unit/test_cross_encoder_reranker.py`。
 
-### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ⏳
+### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ✅
 - **目标**：新增 `llamacpp_llm.py`，通过 `llama-server` 的 OpenAI 兼容 `/v1/chat/completions` 调用本地 GGUF 模型。
 - **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp LLM）
 - **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）

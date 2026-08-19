@@ -132,6 +132,7 @@ def _register_builtin_providers() -> None:
     """注册 B7 阶段内置 LLM Provider（import 时执行一次）。"""
     from libs.llm.azure_llm import AzureLLM
     from libs.llm.deepseek_llm import DeepSeekLLM
+    from libs.llm.llamacpp_llm import LlamaCppLLM
     from libs.llm.ollama_llm import OllamaLLM
     from libs.llm.openai_llm import OpenAILLM
 
@@ -139,6 +140,7 @@ def _register_builtin_providers() -> None:
     register_llm_provider("azure", AzureLLM)
     register_llm_provider("deepseek", DeepSeekLLM)
     register_llm_provider("ollama", OllamaLLM)
+    register_llm_provider("llamacpp", LlamaCppLLM)
 
 
 _register_builtin_providers()
