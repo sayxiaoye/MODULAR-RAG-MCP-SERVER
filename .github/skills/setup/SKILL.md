@@ -1,6 +1,6 @@
 ---
 name: setup
-description: "Interactive project setup wizard. From a clean codebase, guides user through provider selection (OpenAI/Azure/DeepSeek/Ollama/Qwen/Gemini/etc.), API key configuration, dependency installation, config generation, and launches the dashboard. If user selects an unimplemented provider, auto-scaffolds the provider code following the plugin architecture. Auto-diagnoses and fixes startup failures with up to 3 retry rounds. Use when user says 'setup', 'set up', 'configure', 'init project', '初始化', '环境配置', '项目配置', 'first run', 'get started', 'quick start', or wants to configure and launch the project from scratch."
+description: "Interactive project setup wizard. From a clean codebase, guides user through provider selection (OpenAI/Azure/DeepSeek/LlamaCpp/Ollama/Qwen/Gemini/etc.), API key configuration, dependency installation, config generation, and launches the dashboard. If user selects an unimplemented provider, auto-scaffolds the provider code following the plugin architecture. Auto-diagnoses and fixes startup failures with up to 3 retry rounds. Use when user says 'setup', 'set up', 'configure', 'init project', '初始化', '环境配置', '项目配置', 'first run', 'get started', 'quick start', or wants to configure and launch the project from scratch."
 ---
 
 # Setup
@@ -80,14 +80,15 @@ Use the `ask_questions` tool to gather provider choices. Ask in batches (max 4 q
 Ask these questions together:
 
 1. **LLM Provider** — Which LLM provider?
-   - Options: `OpenAI`, `Azure OpenAI`, `DeepSeek`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Groq`, `Together AI`
-   - Recommended: `OpenAI`
-   - Built-in: OpenAI, Azure, DeepSeek, Ollama. Others require auto-scaffolding (see Step 2.5).
+   - Options: `LlamaCpp (local, recommended)`, `OpenAI`, `Azure OpenAI`, `DeepSeek`, `Ollama (local, legacy)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Groq`, `Together AI`
+   - Recommended (local/offline): `LlamaCpp` — config in [references/provider_profiles.md](references/provider_profiles.md); implement via [references/new_provider_guide.md](references/new_provider_guide.md) (B7.9)
+   - Recommended (cloud): `OpenAI`
+   - Built-in: OpenAI, Azure, DeepSeek, Ollama (legacy). **LlamaCpp**: spec ready, code pending (B7.9). Others require auto-scaffolding (see Step 2.5).
 
 2. **Embedding Provider** — Which embedding provider?
-   - Options: `OpenAI`, `Azure OpenAI`, `Ollama (local)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Together AI`
-   - Recommended: `OpenAI` (should match LLM provider when possible)
-   - Built-in: OpenAI, Azure, Ollama. Others require auto-scaffolding (see Step 2.5).
+   - Options: `LlamaCpp (local)`, `OpenAI`, `Azure OpenAI`, `Ollama (local, legacy)`, `Qwen (Alibaba Cloud)`, `Gemini (Google)`, `Mistral`, `Together AI`
+   - Recommended: match LLM deployment style (LlamaCpp local or same cloud vendor as LLM)
+   - Built-in: OpenAI, Azure, Ollama (legacy). **LlamaCpp embedding**: pending (B7.10). Others require auto-scaffolding (see Step 2.5).
 
 3. **Vision** — Enable vision/image captioning?
    - Options: `Yes`, `No`
@@ -117,9 +118,18 @@ For each secret, prefer asking whether to store it in an environment variable or
 
 **If DeepSeek selected:**
 - Ask: DeepSeek API Key
-- Ask: Embedding provider separately (DeepSeek has no embeddings — must use OpenAI/Ollama)
+- Ask: Embedding provider separately (DeepSeek has no embeddings — must use OpenAI/LlamaCpp/Ollama)
 
-**If Ollama selected:**
+**If LlamaCpp selected:**
+- Ask: Chat base URL (default: `http://localhost:8080/v1`)
+- Ask: LLM model name (must match `llama-server` loaded GGUF / `--alias`)
+- Ask: Embedding base URL (default: `http://localhost:8081/v1` — separate instance recommended)
+- Ask: Embedding model name (default: `nomic-embed-text-v1.5`)
+- Verify llama-server: `curl http://localhost:8080/v1/models` (chat) and embedding port if used
+- Refer to [references/provider_profiles.md](references/provider_profiles.md) and [references/new_provider_guide.md](references/new_provider_guide.md)
+- If provider code not yet implemented: inform user and offer to implement B7.9/B7.10
+
+**If Ollama selected (legacy):**
 - Ask: Ollama base URL (default: `http://localhost:11434`)
 - Ask: LLM model name (default: `llama4:scout`)
 - Ask: Embedding model name (default: `nomic-embed-text`)
@@ -159,7 +169,8 @@ Vision models per provider (recommended model listed first):
 |----------|------------|---------------|-------|
 | OpenAI | `gpt-5` | `gpt-5-mini`, `gpt-4o` | gpt-5-mini 更便宜，gpt-4o 最稳定 |
 | Azure | `gpt-5` | `gpt-4o` | 需要 deployment_name + azure_endpoint |
-| Ollama | `llama4:scout` | `qwen3-vl:8b`, `gemma4:12b`, `llava:13b` | llama4:scout 原生多模态 10M 上下文，qwen3-vl 最佳开源视觉 |
+| LlamaCpp | `qwen2.5-7b-instruct` | `qwen2.5-14b-instruct`, etc. | llama-server + GGUF; OpenAI-compat `/v1/*` |
+| Ollama (legacy) | `llama4:scout` | `qwen3-vl:8b`, `gemma4:12b`, `llava:13b` | llama4:scout 原生多模态 10M 上下文，qwen3-vl 最佳开源视觉 |
 | Qwen | `qwen3.7-plus` | `qwen3-vl-32b-thinking` | qwen3.7-plus 多模态性价比高，vl-32b 视觉推理旗舰 |
 | Gemini | `gemini-3.6-flash` | `gemini-3.5-flash`, `gemini-3.5-pro` | 3.6-flash 最新最高效，3.5-pro 质量最高但较慢 |
 | DeepSeek | ❌ 无 Vision 模型 | — | 需选择其他 provider 作为 Vision LLM |
@@ -191,7 +202,8 @@ Read the template from [references/settings_template.yaml](references/settings_t
 
 Key rules:
 - Look up `dimensions` from the model→dimensions table in [references/provider_profiles.md](references/provider_profiles.md)
-- For Ollama: set `base_url`, leave `api_key`/`azure_endpoint`/`deployment_name` empty
+- For LlamaCpp: set `base_url` (chat `8080/v1`, embed `8081/v1`), omit `api_key`; see [provider_profiles.md](references/provider_profiles.md)
+- For Ollama (legacy): set `base_url`, leave `api_key`/`azure_endpoint`/`deployment_name` empty
 - For OpenAI: leave `azure_endpoint`/`deployment_name`/`api_version` empty
 - If vision disabled: set `vision_llm.enabled: false`
 - For rerank: set `enabled`, `provider`, and `model` accordingly
@@ -256,7 +268,9 @@ Round 0..2:
 Common fixes:
 - `SettingsError: Missing required field` → add the field to settings.yaml
 - `ModuleNotFoundError` → `pip install <package>`
-- `Connection refused` (Ollama) → inform user to start Ollama service
+- `Connection refused` (LlamaCpp) → inform user to start `llama-server` (check port 8080/8081)
+- `Connection refused` (Ollama, legacy) → inform user to start Ollama service
+- `未知的 LLM provider: 'llamacpp'` → implement B7.9/B7.10 per [new_provider_guide.md](references/new_provider_guide.md)
 - Wrong `dimensions` value → look up correct value from provider_profiles.md
 
 If 3 rounds fail, report the issue to the user with diagnosis and ask for help.

@@ -66,7 +66,7 @@ Build an internal mental model covering these **10 Knowledge Domains**, each con
 | **D6** | **可插拔架构 & 配置系统** | |
 | D6.1 | 工厂模式全景：LLM/Embedding/Reranker/VectorStore/Evaluator 五大工厂 | `src/libs/*/factory*.py` |
 | D6.2 | settings.yaml 配置结构与 Settings 类加载机制 | `config/settings.yaml`, `src/core/settings.py` |
-| D6.3 | LLM Provider 多厂商支持：Azure/OpenAI/DeepSeek/Ollama 切换逻辑 | `src/libs/llm/` |
+| D6.3 | LLM Provider 多厂商支持：Azure/OpenAI/DeepSeek/LlamaCpp/Ollama 切换逻辑 | `src/libs/llm/` |
 | D6.4 | Embedding Provider 抽象：多后端实现对比与选型策略 | `src/libs/embedding/` |
 | D6.5 | Base 类设计哲学：接口抽象、继承层次与扩展点 | `src/libs/*/base_*.py` |
 | **D7** | **多模态处理** | |

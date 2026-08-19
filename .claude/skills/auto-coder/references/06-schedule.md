@@ -56,13 +56,15 @@
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [x] | 2026-08-07 | BaseReranker + NoneReranker + RerankerFactory + 7个单元测试 |
 | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-08-07 | CustomEvaluator + EvaluatorFactory + 7个单元测试 |
 | B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-08-07 | OpenAI/Azure/DeepSeek + openai_compatible + 8个冒烟测试 |
-| B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试 |
+| B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试（legacy） |
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
-| B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试 |
+| B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试（legacy） |
 | B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
 | B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
+| B7.9 | LlamaCpp LLM 实现 | [ ] | — | 待开发：LlamaCppLLM + OpenAI-compat + 工厂注册 + 单测 |
+| B7.10 | LlamaCpp Embedding 实现 | [ ] | — | 待开发：LlamaCppEmbedding + 工厂注册 + 单测 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
@@ -315,7 +317,7 @@
   - `chat(messages)` 对输入 shape 校验清晰，异常信息可读（包含 provider 与错误类型）。
 - **测试方法**：`pytest -q tests/unit/test_llm_providers_smoke.py`。
 
-### B7.2：Ollama LLM（本地后端） ✅
+### B7.2：Ollama LLM（本地后端，legacy） ✅
 - **目标**：补齐 `ollama_llm.py`，支持本地 HTTP endpoint（默认 `base_url` + `model`），并可被 mock 测试。
 - **修改文件**：
   - `src/libs/llm/ollama_llm.py`
@@ -338,7 +340,7 @@
   - Azure 实现复用 OpenAI Embedding 的核心逻辑，保持行为一致性。
 - **测试方法**：`pytest -q tests/unit/test_embedding_providers_smoke.py`。
 
-### B7.4：Ollama Embedding 实现 ✅
+### B7.4：Ollama Embedding 实现（legacy） ✅
 - **目标**：补齐 `ollama_embedding.py`，支持通过 Ollama HTTP API 调用本地部署的 Embedding 模型（如 `nomic-embed-text`、`mxbai-embed-large` 等），实现 `embed(texts)` 批量向量化功能。
 - **修改文件**：
   - `src/libs/embedding/ollama_embedding.py`
@@ -393,6 +395,21 @@
   - backend=cross_encoder 时 `RerankerFactory` 可创建。
   - 提供超时/失败回退信号（供 Core 层 `D6` fallback 使用）。
 - **测试方法**：`pytest -q tests/unit/test_cross_encoder_reranker.py`。
+
+### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ⏳
+- **目标**：新增 `llamacpp_llm.py`，通过 `llama-server` OpenAI 兼容 API 调用本地 GGUF。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`
+- **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
+- **修改文件**：`src/libs/llm/llamacpp_llm.py`、`llm_factory.py`、`tests/unit/test_llamacpp_llm.py`
+- **验收标准**：`provider=llamacpp` 可创建；默认 `http://localhost:8080/v1`；api_key 可省略。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_llm.py`
+
+### B7.10：LlamaCpp Embedding 实现 ⏳
+- **目标**：新增 `llamacpp_embedding.py`，建议独立 embedding 端口（8081）。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`
+- **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
+- **修改文件**：`src/libs/embedding/llamacpp_embedding.py`、`embedding_factory.py`、`tests/unit/test_llamacpp_embedding.py`
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_embedding.py`
 
 ### B8：Vision LLM 抽象接口与工厂集成 ✅
 - **目标**：定义 `BaseVisionLLM` 抽象接口，扩展 `LLMFactory` 支持 Vision LLM 创建，为 C7 的 ImageCaptioner 提供底层抽象。

@@ -1,4 +1,7 @@
 # Modular RAG MCP Server — minimal configuration (expanded in A3)
+# Local inference: planned default is provider: llamacpp (B7.9/B7.10).
+# Config: .github/skills/setup/references/provider_profiles.md
+# Current values below still use ollama until LlamaCpp provider is implemented.
 
 llm:
   provider: ollama

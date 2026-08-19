@@ -47,7 +47,39 @@ llm:
 > with `thinking: {type: enabled}` or switch to `deepseek-v4-pro`.
 > Both V4 models support 1M context (8× the old V3.2 limit).
 
-### Ollama (local)
+### LlamaCpp (local, recommended)
+
+> **Status**: Provider code **pending** (tasks B7.9 / B7.10 in `DEV_SPEC.md`).
+> Uses **llama-server** OpenAI-compatible API (`/v1/chat/completions`), not Ollama protocol.
+> Implementation notes: [new_provider_guide.md](new_provider_guide.md) § Planned: LlamaCpp.
+
+```yaml
+llm:
+  provider: "llamacpp"
+  model: "qwen2.5-7b-instruct"     # must match GGUF loaded in llama-server / --alias
+  base_url: "http://localhost:8080/v1"
+  temperature: 0.0
+  max_tokens: 4096
+  # api_key optional — llama-server typically does not validate keys
+```
+
+Start chat server:
+
+```bash
+llama-server -m /path/to/chat-model.gguf --port 8080
+```
+
+Verify: `curl http://localhost:8080/v1/models`
+
+`model` must match the id returned by `/v1/models` (GGUF filename or `--alias`).
+No API key required once implemented (`api_key` may be omitted).
+
+**vs Ollama**: Ollama uses native `/api/chat` on port 11434; LlamaCpp uses OpenAI-compat `/v1/*`. Prefer `llamacpp` for new local deployments; keep `ollama` as legacy.
+
+### Ollama (local, legacy)
+
+> **Note**: Retained for compatibility. **New local deployments should prefer `llamacpp`.**
+
 ```yaml
 llm:
   provider: "ollama"
@@ -81,7 +113,29 @@ embedding:
   api_key: "<AZURE_API_KEY>"
 ```
 
-### Ollama
+### LlamaCpp (local, recommended)
+
+> **Status**: Provider code **pending** (B7.10). Chat and embedding should use **separate llama-server instances** (different ports / GGUF files).
+
+```yaml
+embedding:
+  provider: "llamacpp"
+  model: "nomic-embed-text-v1.5"
+  dimensions: 768
+  base_url: "http://localhost:8081/v1"
+```
+
+Start embedding server:
+
+```bash
+llama-server -m /path/to/embed-model.gguf --port 8081 --embedding
+```
+
+Verify: `curl http://localhost:8081/v1/embeddings -H "Content-Type: application/json" -d '{"model":"<embed-model>","input":["hello"]}'`
+
+> After changing embedding model or `dimensions`, **clear Chroma and re-run ingestion** — old vectors are not compatible.
+
+### Ollama (legacy)
 ```yaml
 embedding:
   provider: "ollama"
@@ -202,8 +256,9 @@ SDK: `pip install openai` (uses OpenAI-compatible protocol)
 | text-embedding-3-small          | 1536 (512–1536) | Matryoshka — variable dims supported |
 | text-embedding-3-large          | 3072 (256–3072) | Matryoshka — 256d still beats ada-002 |
 | text-embedding-ada-002 (legacy) | 1536       | Not recommended for new projects |
-| nomic-embed-text (Ollama)       | 768        | |
-| mxbai-embed-large (Ollama)      | 1024       | |
+| nomic-embed-text-v1.5 (LlamaCpp) | 768     | via llama-server `--embedding`; confirm with `/v1/embeddings` |
+| nomic-embed-text (Ollama, legacy) | 768      | |
+| mxbai-embed-large (Ollama, legacy) | 1024    | |
 | text-embedding-v3 (Qwen)        | 1024       | |
 | text-embedding-004 (Gemini)     | 768        | |
 | mistral-embed (Mistral)         | 1024       | |

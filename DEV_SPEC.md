@@ -83,7 +83,7 @@
     - 核心推理 LLM 通过统一的抽象接口封装，支持**多协议**无缝切换：
         - **Azure OpenAI**：企业级 Azure 云端服务，符合合规与安全要求；
         - **OpenAI API**：直接对接 OpenAI 官方接口；
-        - **本地模型**：支持 Ollama、vLLM、LM Studio 等本地私有化部署方案；
+        - **本地模型**：首选 **llama.cpp**（`llama-server`，`provider: llamacpp`）；亦支持 Ollama（legacy）、vLLM、LM Studio 等；
         - **其他云服务**：DeepSeek、Anthropic Claude 等第三方 API。
     - 通过配置文件一键切换后端，**零代码修改**即可完成 LLM 迁移，便于成本优化、隐私合规或 A/B 测试。
 
@@ -438,7 +438,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 
 **目标：** 定义清晰的抽象层与接口契约，使 RAG 链路的每个核心组件都能够独立替换与升级，避免技术锁定，支持低成本的 A/B 测试与环境迁移。
 
-> **术语说明**：本节中的"提供者 (Provider)"、"实现 (Implementation)"指的是完成某项功能的**具体技术方案**，而非传统 Web 架构中的"后端服务器"。例如，LLM 提供者可以是远程的 Azure OpenAI API，也可以是本地运行的 Ollama；向量存储可以是本地嵌入式的 Chroma，也可以是云端托管的 Pinecone。本项目作为本地 MCP Server，通过统一接口对接这些不同的提供者，实现灵活切换。
+> **术语说明**：本节中的"提供者 (Provider)"、"实现 (Implementation)"指的是完成某项功能的**具体技术方案**，而非传统 Web 架构中的"后端服务器"。例如，LLM 提供者可以是远程的 Azure OpenAI API，也可以是本地运行的 llama.cpp（`llama-server`）或 Ollama（legacy）；向量存储可以是本地嵌入式的 Chroma，也可以是云端托管的 Pinecone。本项目作为本地 MCP Server，通过统一接口对接这些不同的提供者，实现灵活切换。
 
 #### 3.3.1 设计原则
 
@@ -468,7 +468,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 这是可插拔设计的核心环节，因为模型提供者的选择直接影响成本、性能与隐私合规。
 
 - **统一接口层 (Unified API Abstraction)**：
-	- **设计思路**：无论底层使用 Azure OpenAI、OpenAI 原生 API、DeepSeek 还是本地 Ollama，上层调用代码应保持一致。
+	- **设计思路**：无论底层使用 Azure OpenAI、OpenAI 原生 API、DeepSeek 还是本地 llama.cpp / Ollama，上层调用代码应保持一致。
 	- **关键抽象**：
 		- `LLMClient`：暴露 `chat(messages) -> response` 方法，屏蔽不同 Provider 的认证方式与请求格式差异。
 		- `EmbeddingClient`：暴露 `embed(texts) -> vectors` 方法，统一处理批量请求与维度归一化。
@@ -480,10 +480,11 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 | **Azure OpenAI** | 企业合规、私有云部署、区域数据驻留 | `provider: azure`, `endpoint`, `api_key`, `deployment_name` |
 | **OpenAI 原生** | 通用开发、最新模型尝鲜 | `provider: openai`, `api_key`, `model` |
 | **DeepSeek / 其他云端** | 成本优化、特定语言优化 | `provider: deepseek`, `api_key`, `model` |
+| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API | `provider: llamacpp`, `base_url` (`:8080/v1`), `model` |
 | **Ollama / vLLM (本地)** | 完全离线、隐私敏感、无 API 成本 | `provider: ollama`, `base_url`, `model` |
 
 - **技术选型建议**：
-	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、Ollama、DeepSeek 四种 Provider 适配。
+	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、LlamaCpp、Ollama、DeepSeek 五种 Provider 适配。
 	- 对于其他 Provider，可通过 **OpenAI-Compatible 模式**接入（设置自定义 `api_base`），或实现 `BaseLLM` 接口并在工厂中注册。
 
 	- 对于企业级需求，可在其基础上增加统一的 **重试、限流、日志** 中间层，提升生产可靠性，但本项目暂不实现，这里仅提供思路。
@@ -550,7 +551,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 
 存储时，Dense Vector 和 Sparse Vector 与 Chunk 原文、Metadata 一起原子化写入向量数据库，确保检索时可同时利用两种向量。
 
-> **当前实现说明**：目前系统实现了 Dense + Sparse 双路编码。架构设计上预留了切换能力，如需使用其他 Embedding 模型（如 BGE、Ollama 本地模型）或调整编码策略，可在 Pipeline 中替换相应组件。
+> **当前实现说明**：目前系统实现了 Dense + Sparse 双路编码。架构设计上预留了切换能力，如需使用其他 Embedding 模型（如 BGE、llama.cpp / Ollama 本地模型）或调整编码策略，可在 Pipeline 中替换相应组件。
 
 ---
 
@@ -595,7 +596,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 - **配置文件结构示例** (`config/settings.yaml`)：
 	```yaml
 	llm:
-	  provider: azure  # azure | openai | ollama | deepseek
+	  provider: azure  # azure | openai | llamacpp | ollama | deepseek
 	  model: gpt-4o
 	  # provider-specific configs...
 	
@@ -1377,7 +1378,8 @@ Hybrid Search 命中 Chunk（正文含 "[图片描述: 系统采用三层架构.
 │  ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤  │
 │  │ · Azure    │ │ · OpenAI   │ │ · Recursive│ │ · Chroma   │ │ · None     │ │ · Ragas    │  │
 │  │ · OpenAI   │ │ · BGE      │ │ · Semantic │ │ · Qdrant   │ │ · CrossEnc │ │ · DeepEval │  │
-│  │ · Ollama   │ │ · Ollama   │ │ · FixedLen │ │ · Pinecone │ │ · LLM      │ │ · Custom   │  │
+│  │ · LlamaCpp │ │ · LlamaCpp │ │ · FixedLen │ │ · Pinecone │ │ · LLM      │ │ · Custom   │  │
+│  │ · Ollama † │ │ · Ollama † │ │            │ │            │ │            │ │            │  │
 │  │ · DeepSeek │ │ · ...      │ │ · ...      │ │ · ...      │ │            │ │            │  │
 │  │ · Vision✨ │ │            │ │            │ │            │ │            │ │            │  │
 │  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘  │
@@ -1491,7 +1493,8 @@ smart-knowledge-hub/
 │   │   │   ├── llm_factory.py           # LLM 工厂
 │   │   │   ├── azure_llm.py             # Azure OpenAI 实现
 │   │   │   ├── openai_llm.py            # OpenAI 实现
-│   │   │   ├── ollama_llm.py            # Ollama 本地模型实现
+│   │   │   ├── ollama_llm.py            # Ollama 本地模型实现（legacy）
+│   │   │   ├── llamacpp_llm.py          # llama.cpp 本地模型实现
 │   │   │   ├── deepseek_llm.py          # DeepSeek 实现
 │   │   │   ├── base_vision_llm.py       # Vision LLM 抽象基类（支持图像输入）
 │   │   │   └── azure_vision_llm.py      # Azure Vision 实现 (GPT-4o/GPT-4-Vision)
@@ -1502,7 +1505,8 @@ smart-knowledge-hub/
 │   │   │   ├── embedding_factory.py     # Embedding 工厂
 │   │   │   ├── openai_embedding.py      # OpenAI Embedding 实现
 │   │   │   ├── azure_embedding.py       # Azure Embedding 实现
-│   │   │   └── ollama_embedding.py      # Ollama 本地模型实现
+│   │   │   ├── ollama_embedding.py      # Ollama 本地模型实现（legacy）
+│   │   │   └── llamacpp_embedding.py    # llama.cpp Embedding
 │   │   │
 │   │   ├── splitter/                    # Splitter 抽象 (切分策略)
 │   │   │   ├── __init__.py
@@ -1676,9 +1680,9 @@ smart-knowledge-hub/
 
 | 抽象接口 | 当前默认实现 | 可替换选项 |
 |---------|------------|----------|
-| `LLMClient` | Azure OpenAI | OpenAI / Ollama / DeepSeek |
-| `VisionLLMClient` | Azure OpenAI Vision (GPT-4o) | OpenAI Vision / Ollama Vision (LLaVA) |
-| `EmbeddingClient` | OpenAI text-embedding-3 | BGE / Ollama 本地模型 |
+| `LLMClient` | Azure OpenAI | OpenAI / LlamaCpp / Ollama (legacy) / DeepSeek |
+| `VisionLLMClient` | Azure OpenAI Vision (GPT-4o) | OpenAI Vision / Ollama Vision (LLaVA, legacy) |
+| `EmbeddingClient` | OpenAI text-embedding-3 | BGE / LlamaCpp / Ollama 本地模型 |
 | `Loader` | PDF Loader（MarkItDown） | Markdown/HTML/Code Loader 等 |
 | `FileIntegrity` | SQLite (`data/db/ingestion_history.db`) | Redis（分布式）/ PostgreSQL（企业级）/ JSON文件（测试） |
 | `Splitter` | RecursiveCharacterTextSplitter | Semantic / FixedLen |
@@ -1846,14 +1850,14 @@ Dashboard (Streamlit UI)
 
 # LLM 配置
 llm:
-  provider: azure           # azure | openai | ollama | deepseek
+  provider: azure           # azure | openai | llamacpp | ollama | deepseek
   model: gpt-4o
   azure_endpoint: "..."
   api_key: "${AZURE_API_KEY}"
 
 # Embedding 配置
 embedding:
-  provider: openai          # openai | azure | ollama (本地)
+  provider: openai          # openai | azure | llamacpp | ollama (本地)
   model: text-embedding-3-small
   
 # Vision LLM 配置 (图片描述)
@@ -1966,13 +1970,15 @@ dashboard:
 | B5 | Reranker 抽象接口与工厂（含 None 回退） | [x] | 2026-08-07 | BaseReranker + NoneReranker + RerankerFactory + 7个单元测试 |
 | B6 | Evaluator 抽象接口与工厂 | [x] | 2026-08-07 | CustomEvaluator + EvaluatorFactory + 7个单元测试 |
 | B7.1 | OpenAI-Compatible LLM 实现 | [x] | 2026-08-07 | OpenAI/Azure/DeepSeek + openai_compatible + 8个冒烟测试 |
-| B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试 |
+| B7.2 | Ollama LLM 实现 | [x] | 2026-08-07 | OllamaLLM + 工厂注册 + 4个单元测试（legacy） |
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
-| B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试 |
+| B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试（legacy） |
 | B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
 | B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
+| B7.9 | LlamaCpp LLM 实现 | [ ] | — | 待开发：LlamaCppLLM + OpenAI-compat + 工厂注册 + 单测 |
+| B7.10 | LlamaCpp Embedding 实现 | [ ] | — | 待开发：LlamaCppEmbedding + 工厂注册 + 单测 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
@@ -2225,7 +2231,7 @@ dashboard:
   - `chat(messages)` 对输入 shape 校验清晰，异常信息可读（包含 provider 与错误类型）。
 - **测试方法**：`pytest -q tests/unit/test_llm_providers_smoke.py`。
 
-### B7.2：Ollama LLM（本地后端） ✅
+### B7.2：Ollama LLM（本地后端，legacy） ✅
 - **目标**：补齐 `ollama_llm.py`，支持本地 HTTP endpoint（默认 `base_url` + `model`），并可被 mock 测试。
 - **修改文件**：
   - `src/libs/llm/ollama_llm.py`
@@ -2248,7 +2254,7 @@ dashboard:
   - Azure 实现复用 OpenAI Embedding 的核心逻辑，保持行为一致性。
 - **测试方法**：`pytest -q tests/unit/test_embedding_providers_smoke.py`。
 
-### B7.4：Ollama Embedding 实现 ✅
+### B7.4：Ollama Embedding 实现（legacy） ✅
 - **目标**：补齐 `ollama_embedding.py`，支持通过 Ollama HTTP API 调用本地部署的 Embedding 模型（如 `nomic-embed-text`、`mxbai-embed-large` 等），实现 `embed(texts)` 批量向量化功能。
 - **修改文件**：
   - `src/libs/embedding/ollama_embedding.py`
@@ -2303,6 +2309,37 @@ dashboard:
   - backend=cross_encoder 时 `RerankerFactory` 可创建。
   - 提供超时/失败回退信号（供 Core 层 `D6` fallback 使用）。
 - **测试方法**：`pytest -q tests/unit/test_cross_encoder_reranker.py`。
+
+### B7.9：LlamaCpp LLM（llama.cpp 本地后端，推荐） ⏳
+- **目标**：新增 `llamacpp_llm.py`，通过 `llama-server` 的 OpenAI 兼容 `/v1/chat/completions` 调用本地 GGUF 模型。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp LLM）
+- **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
+- **修改文件**：
+  - `src/libs/llm/llamacpp_llm.py`（继承 `OpenAICompatibleLLM`，覆盖 `_resolve_api_key` 使 Key 可省略）
+  - `src/libs/llm/llm_factory.py`（注册 `llamacpp`）
+  - `tests/unit/test_llamacpp_llm.py`（mock HTTP）
+- **验收标准**：
+  - `provider=llamacpp` 时 `LLMFactory` 可创建。
+  - 默认 `base_url` 为 `http://localhost:8080/v1`；`api_key` 可省略。
+  - 错误信息包含 `[llamacpp]` 前缀与 llama-server 运维提示。
+  - 不删除 Ollama；不实现 LlamaCpp Vision。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_llm.py`。
+
+### B7.10：LlamaCpp Embedding 实现 ⏳
+- **目标**：新增 `llamacpp_embedding.py`，通过 `/v1/embeddings` 调用独立 embedding 实例（建议端口 8081）。
+- **配置参考**：`.github/skills/setup/references/provider_profiles.md`（LlamaCpp Embedding）
+- **实现要点**：`.github/skills/setup/references/new_provider_guide.md`（Planned: LlamaCpp）
+- **修改文件**：
+  - `src/libs/embedding/llamacpp_embedding.py`
+  - `src/libs/embedding/embedding_factory.py`
+  - `tests/unit/test_llamacpp_embedding.py`
+  - `tests/unit/test_config_loading.py`（默认 provider 断言，与 B7.9 一并改）
+  - `tests/integration/test_chunk_refiner_llm.py`（探测 `/v1/models`）
+- **验收标准**：
+  - `provider=llamacpp` 时 `EmbeddingFactory` 可创建。
+  - 支持批量 `embed(texts)`；`dimensions` 与模型一致；若服务端不支持 `dimensions` 则不传该字段。
+  - 换模型后需清空 Chroma 并重跑 ingestion。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_embedding.py`。
 
 ### B8：Vision LLM 抽象接口与工厂集成 ✅
 - **目标**：定义 `BaseVisionLLM` 抽象接口，扩展 `LLMFactory` 支持 Vision LLM 创建，为 C7 的 ImageCaptioner 提供底层抽象。

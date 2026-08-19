@@ -5,7 +5,7 @@
 # LLM Configuration
 # =============================================================================
 llm:
-  provider: "{llm_provider}"  # Options: openai, azure, ollama, deepseek, qwen, gemini, ...
+  provider: "{llm_provider}"  # Options: openai, azure, llamacpp (local, recommended), ollama (legacy), deepseek, ...
   model: "{llm_model}"
   deployment_name: "{llm_deployment_name}"
   azure_endpoint: "{llm_azure_endpoint}"
@@ -19,7 +19,7 @@ llm:
 # Embedding Configuration
 # =============================================================================
 embedding:
-  provider: "{embed_provider}"  # Options: openai, azure, ollama, qwen, gemini, ...
+  provider: "{embed_provider}"  # Options: openai, azure, llamacpp (local), ollama (legacy), qwen, gemini, ...
   model: "{embed_model}"
   dimensions: {embed_dimensions}
   azure_endpoint: "{embed_azure_endpoint}"

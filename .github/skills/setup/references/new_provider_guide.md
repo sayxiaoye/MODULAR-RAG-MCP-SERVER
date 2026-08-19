@@ -4,9 +4,11 @@ When a user selects a provider that is not yet implemented, follow this procedur
 
 ## Quick Check: Is the Provider Built-in?
 
-Built-in LLM providers: `openai`, `azure`, `deepseek`, `ollama`
-Built-in Embedding providers: `openai`, `azure`, `ollama`
+Built-in LLM providers: `openai`, `azure`, `deepseek`, `ollama` (legacy), `llamacpp` 
+Built-in Embedding providers: `openai`, `azure`, `ollama` (legacy), `llamacpp` 
 Built-in Vision providers: `openai`, `azure`
+
+**Local inference**: prefer **`llamacpp`** (llama.cpp `llama-server`, OpenAI-compatible `/v1/*`). Use `ollama` only for legacy setups. Config examples: [provider_profiles.md](provider_profiles.md).
 
 If the provider is NOT in these lists, proceed with scaffolding below.
 
@@ -62,6 +64,58 @@ class <ProviderName>LLM(OpenAILLM):
 ```
 
 For providers that are NOT OpenAI-compatible, subclass `BaseLLM` directly and implement `chat()` — refer to `deepseek_llm.py` or `ollama_llm.py` as examples.
+
+## Planned: LlamaCpp Provider (local llama.cpp)
+
+Do **not** generic-scaffold as a cloud OpenAI clone. Follow this section + `DEV_SPEC.md` B7.9 / B7.10.
+
+**Why a dedicated provider**: llama.cpp `llama-server` is OpenAI-compatible (`/v1/chat/completions`, `/v1/embeddings`). Ollama uses a different native API (`/api/chat`). Do not reuse `ollama` or set `provider: openai` against localhost.
+
+**Files to add**
+
+| File | Notes |
+|------|--------|
+| `src/libs/llm/llamacpp_llm.py` | Subclass `OpenAICompatibleLLM` (same pattern as `DeepSeekLLM`) |
+| `src/libs/embedding/llamacpp_embedding.py` | Reuse `request_compatible_embeddings` |
+| `tests/unit/test_llamacpp_llm.py` | mock HTTP: chat / connect fail / HTTP error |
+| `tests/unit/test_llamacpp_embedding.py` | mock HTTP: embed / dim mismatch / errors |
+
+**Files to update**
+
+- `llm_factory.py` / `embedding_factory.py`: `register_*_provider("llamacpp", ...)`
+- `config/settings.yaml`: default `provider: llamacpp` after implementation
+- `tests/unit/test_config_loading.py`: assert default provider `llamacpp`
+- `tests/integration/test_chunk_refiner_llm.py`: probe `/v1/models` instead of Ollama `/api/tags`
+
+**LLM sketch**
+
+```python
+DEFAULT_LLAMACPP_BASE_URL = "http://localhost:8080/v1"
+
+class LlamaCppLLM(OpenAICompatibleLLM):
+    def __init__(self, settings: LLMSettings) -> None:
+        super().__init__(
+            settings=settings,
+            provider_name="llamacpp",
+            base_url=settings.base_url or DEFAULT_LLAMACPP_BASE_URL,
+            api_key_env="LLAMACPP_API_KEY",
+        )
+
+    def _resolve_api_key(self) -> str:
+        if self.settings.api_key:
+            return self.settings.api_key
+        return os.environ.get("LLAMACPP_API_KEY", "not-needed")
+```
+
+Optional: timeout `120.0` (local inference is slower); errors like `[llamacpp] 请确认 llama-server 已启动：llama-server -m <model.gguf> --port 8080`.
+
+**Embedding notes**
+
+- Default `base_url`: `http://localhost:8081/v1` (separate process from chat)
+- Same optional API key placeholder
+- If llama-server returns 400 on `dimensions`, omit that field in `LlamaCppEmbedding.embed()`
+
+**Out of scope**: LlamaCpp Vision; deleting Ollama; in-process `llama-cpp-python` (HTTP `llama-server` only).
 
 ## Step 2: Create Embedding Provider (if needed)
 
@@ -159,6 +213,7 @@ Provider-specific SDKs if NOT OpenAI-compatible:
 | Groq     | `https://api.groq.com/openai/v1` | N/A (no embedding) | `GROQ_API_KEY` | Yes |
 | Mistral  | `https://api.mistral.ai/v1` | same | `MISTRAL_API_KEY` | Yes |
 | Together | `https://api.together.xyz/v1` | same | `TOGETHER_API_KEY` | Yes |
+| LlamaCpp (local) | `http://localhost:8080/v1` | `http://localhost:8081/v1` | optional (`not-needed`) | Yes (pending) |
 
 ## Validation
 

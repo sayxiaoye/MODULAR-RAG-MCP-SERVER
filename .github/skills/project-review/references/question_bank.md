@@ -13,7 +13,7 @@
 | 1-02 | RAG 是什么？和 Fine-tuning 相比最大的区别是什么？ | ⭐ | RAG 基础 | RAG=检索增强生成，实时检索外部知识，避免重新训练模型；更新成本低，幻觉可追溯 |
 | 1-03 | 项目整体分哪几层架构？每层职责是什么？ | ⭐ | 分层设计 | Ingestion Pipeline（摄取）/ Query Engine（检索）/ MCP Server（协议暴露）/ Dashboard（可视化） |
 | 1-04 | 为什么不用 LlamaIndex 或 LangChain 等现成框架，而要自研 Pipeline？ | ⭐⭐ | 架构决策 | 完全可控的可插拔架构，避免框架版本/依赖锁定，支持幂等设计、差量计算等自定义工程特性 |
-| 1-05 | 项目有哪 5 种可插拔组件？每种举一个具体的可替换例子 | ⭐⭐ | 可插拔架构 | LLM(Azure→Ollama)、Embedding(OpenAI→BGE)、VectorStore(Chroma→Qdrant)、Splitter、Reranker(CrossEncoder→LLM) |
+| 1-05 | 项目有哪 5 种可插拔组件？每种举一个具体的可替换例子 | ⭐⭐ | 可插拔架构 | LLM(Azure→LlamaCpp)、Embedding(OpenAI→BGE)、VectorStore(Chroma→Qdrant)、Splitter、Reranker(CrossEncoder→LLM) |
 | 1-06 | 这个项目里有哪几类存储后端？各自存什么数据？ | ⭐⭐ | 数据存储 | Chroma(向量+metadata)、SQLite-IngestionHistory(文件哈希)、SQLite-ImageIndex(图片路径)、BM25(倒排索引/pickle)、本地文件(图片) |
 | 1-07 | 用户从 Copilot 发问到拿到答案，整个链路经过哪些关键步骤？ | ⭐⭐ | 端到端流程 | Copilot → MCP Host → MCP Server(stdio) → QueryEngine → HybridSearch → Rerank → Response构建 → 返回带引用结果 |
 | 1-08 | 项目的幂等性在哪里体现？为什么幂等很重要？ | ⭐⭐⭐ | 工程设计 | 文件Hash检查(早退)、ChunkID用hash组合生成、Upsert语义写入；避免重复索引，支持重跑不污染数据 |

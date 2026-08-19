@@ -26,14 +26,14 @@
 **技术要点**：
 - 为 LLM / Embedding / Splitter / VectorStore / Reranker / Evaluator 六大组件定义统一抽象接口（Base 类）
 - 采用工厂模式（Factory Pattern）+ YAML 配置驱动，实现"改配置不改代码"的组件切换
-- LLM Provider 支持 Azure OpenAI / OpenAI / Ollama / DeepSeek 四种后端
-- Embedding 支持 OpenAI / Azure / Ollama 三种后端
+- LLM Provider 支持 Azure OpenAI / OpenAI / LlamaCpp（本地推荐）/ Ollama（legacy）/ DeepSeek
+- Embedding 支持 OpenAI / Azure / LlamaCpp/ Ollama（legacy）
 - 向量数据库接口预留扩展（当前默认 Chroma，可切换 Qdrant/Pinecone）
 - Vision LLM 独立抽象（BaseVisionLLM），支持多模态图像处理
 
 **简历话术方向**：
 - "设计了全链路可插拔架构，基于抽象接口 + 工厂模式 + 配置驱动，实现 LLM/Embedding/VectorStore 等 6 大核心组件的零代码热切换"
-- "架构支持 Azure OpenAI、本地 Ollama 等多种 Provider 无缝切换，满足企业合规与成本优化需求"
+- "架构支持 Azure OpenAI、本地 llama.cpp（LlamaCpp Provider）等多种 Provider 无缝切换，满足企业合规与成本优化需求"
 
 **可量化角度**：支持 N 种 LLM Provider、N 种 Embedding 后端、配置切换零代码修改
 

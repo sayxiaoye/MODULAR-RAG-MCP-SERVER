@@ -120,7 +120,8 @@
 │  ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤ ├────────────┤  │
 │  │ · Azure    │ │ · OpenAI   │ │ · Recursive│ │ · Chroma   │ │ · None     │ │ · Ragas    │  │
 │  │ · OpenAI   │ │ · BGE      │ │ · Semantic │ │ · Qdrant   │ │ · CrossEnc │ │ · DeepEval │  │
-│  │ · Ollama   │ │ · Ollama   │ │ · FixedLen │ │ · Pinecone │ │ · LLM      │ │ · Custom   │  │
+│  │ · LlamaCpp │ │ · LlamaCpp │ │ · FixedLen │ │ · Pinecone │ │ · LLM      │ │ · Custom   │  │
+│  │ · Ollama † │ │ · Ollama † │ │            │ │            │ │            │ │            │  │
 │  │ · DeepSeek │ │ · ...      │ │ · ...      │ │ · ...      │ │            │ │            │  │
 │  │ · Vision✨ │ │            │ │            │ │            │ │            │ │            │  │
 │  └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘ └────────────┘  │
@@ -234,7 +235,8 @@ smart-knowledge-hub/
 │   │   │   ├── llm_factory.py           # LLM 工厂
 │   │   │   ├── azure_llm.py             # Azure OpenAI 实现
 │   │   │   ├── openai_llm.py            # OpenAI 实现
-│   │   │   ├── ollama_llm.py            # Ollama 本地模型实现
+│   │   │   ├── ollama_llm.py            # Ollama 本地模型实现（legacy）
+│   │   │   ├── llamacpp_llm.py          # llama.cpp 本地模型实现
 │   │   │   ├── deepseek_llm.py          # DeepSeek 实现
 │   │   │   ├── base_vision_llm.py       # Vision LLM 抽象基类（支持图像输入）
 │   │   │   └── azure_vision_llm.py      # Azure Vision 实现 (GPT-4o/GPT-4-Vision)
@@ -245,7 +247,8 @@ smart-knowledge-hub/
 │   │   │   ├── embedding_factory.py     # Embedding 工厂
 │   │   │   ├── openai_embedding.py      # OpenAI Embedding 实现
 │   │   │   ├── azure_embedding.py       # Azure Embedding 实现
-│   │   │   └── ollama_embedding.py      # Ollama 本地模型实现
+│   │   │   ├── ollama_embedding.py      # Ollama 本地模型实现（legacy）
+│   │   │   └── llamacpp_embedding.py    # llama.cpp Embedding
 │   │   │
 │   │   ├── splitter/                    # Splitter 抽象 (切分策略)
 │   │   │   ├── __init__.py
@@ -419,9 +422,9 @@ smart-knowledge-hub/
 
 | 抽象接口 | 当前默认实现 | 可替换选项 |
 |---------|------------|----------|
-| `LLMClient` | Azure OpenAI | OpenAI / Ollama / DeepSeek |
-| `VisionLLMClient` | Azure OpenAI Vision (GPT-4o) | OpenAI Vision / Ollama Vision (LLaVA) |
-| `EmbeddingClient` | OpenAI text-embedding-3 | BGE / Ollama 本地模型 |
+| `LLMClient` | Azure OpenAI | OpenAI / LlamaCpp / Ollama (legacy) / DeepSeek |
+| `VisionLLMClient` | Azure OpenAI Vision (GPT-4o) | OpenAI Vision / Ollama Vision (LLaVA, legacy) |
+| `EmbeddingClient` | OpenAI text-embedding-3 | BGE / LlamaCpp / Ollama 本地模型 |
 | `Loader` | PDF Loader（MarkItDown） | Markdown/HTML/Code Loader 等 |
 | `FileIntegrity` | SQLite (`data/db/ingestion_history.db`) | Redis（分布式）/ PostgreSQL（企业级）/ JSON文件（测试） |
 | `Splitter` | RecursiveCharacterTextSplitter | Semantic / FixedLen |
@@ -589,14 +592,14 @@ Dashboard (Streamlit UI)
 
 # LLM 配置
 llm:
-  provider: azure           # azure | openai | ollama | deepseek
+  provider: azure           # azure | openai | llamacpp | ollama | deepseek
   model: gpt-4o
   azure_endpoint: "..."
   api_key: "${AZURE_API_KEY}"
 
 # Embedding 配置
 embedding:
-  provider: openai          # openai | azure | ollama (本地)
+  provider: openai          # openai | azure | llamacpp | ollama (本地)
   model: text-embedding-3-small
   
 # Vision LLM 配置 (图片描述)

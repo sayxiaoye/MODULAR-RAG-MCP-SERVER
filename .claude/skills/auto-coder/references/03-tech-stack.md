@@ -270,7 +270,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 
 **目标：** 定义清晰的抽象层与接口契约，使 RAG 链路的每个核心组件都能够独立替换与升级，避免技术锁定，支持低成本的 A/B 测试与环境迁移。
 
-> **术语说明**：本节中的"提供者 (Provider)"、"实现 (Implementation)"指的是完成某项功能的**具体技术方案**，而非传统 Web 架构中的"后端服务器"。例如，LLM 提供者可以是远程的 Azure OpenAI API，也可以是本地运行的 Ollama；向量存储可以是本地嵌入式的 Chroma，也可以是云端托管的 Pinecone。本项目作为本地 MCP Server，通过统一接口对接这些不同的提供者，实现灵活切换。
+> **术语说明**：本节中的"提供者 (Provider)"、"实现 (Implementation)"指的是完成某项功能的**具体技术方案**，而非传统 Web 架构中的"后端服务器"。例如，LLM 提供者可以是远程的 Azure OpenAI API，也可以是本地运行的 llama.cpp（`llama-server`）或 Ollama（legacy）；向量存储可以是本地嵌入式的 Chroma，也可以是云端托管的 Pinecone。本项目作为本地 MCP Server，通过统一接口对接这些不同的提供者，实现灵活切换。
 
 #### 3.3.1 设计原则
 
@@ -300,7 +300,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 这是可插拔设计的核心环节，因为模型提供者的选择直接影响成本、性能与隐私合规。
 
 - **统一接口层 (Unified API Abstraction)**：
-	- **设计思路**：无论底层使用 Azure OpenAI、OpenAI 原生 API、DeepSeek 还是本地 Ollama，上层调用代码应保持一致。
+	- **设计思路**：无论底层使用 Azure OpenAI、OpenAI 原生 API、DeepSeek 还是本地 llama.cpp / Ollama，上层调用代码应保持一致。
 	- **关键抽象**：
 		- `LLMClient`：暴露 `chat(messages) -> response` 方法，屏蔽不同 Provider 的认证方式与请求格式差异。
 		- `EmbeddingClient`：暴露 `embed(texts) -> vectors` 方法，统一处理批量请求与维度归一化。
@@ -312,10 +312,11 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 | **Azure OpenAI** | 企业合规、私有云部署、区域数据驻留 | `provider: azure`, `endpoint`, `api_key`, `deployment_name` |
 | **OpenAI 原生** | 通用开发、最新模型尝鲜 | `provider: openai`, `api_key`, `model` |
 | **DeepSeek / 其他云端** | 成本优化、特定语言优化 | `provider: deepseek`, `api_key`, `model` |
+| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API | `provider: llamacpp`, `base_url` (`:8080/v1`), `model` |
 | **Ollama / vLLM (本地)** | 完全离线、隐私敏感、无 API 成本 | `provider: ollama`, `base_url`, `model` |
 
 - **技术选型建议**：
-	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、Ollama、DeepSeek 四种 Provider 适配。
+	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、LlamaCpp、Ollama、DeepSeek 五种 Provider 适配。
 	- 对于其他 Provider，可通过 **OpenAI-Compatible 模式**接入（设置自定义 `api_base`），或实现 `BaseLLM` 接口并在工厂中注册。
 
 	- 对于企业级需求，可在其基础上增加统一的 **重试、限流、日志** 中间层，提升生产可靠性，但本项目暂不实现，这里仅提供思路。
@@ -382,7 +383,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 
 存储时，Dense Vector 和 Sparse Vector 与 Chunk 原文、Metadata 一起原子化写入向量数据库，确保检索时可同时利用两种向量。
 
-> **当前实现说明**：目前系统实现了 Dense + Sparse 双路编码。架构设计上预留了切换能力，如需使用其他 Embedding 模型（如 BGE、Ollama 本地模型）或调整编码策略，可在 Pipeline 中替换相应组件。
+> **当前实现说明**：目前系统实现了 Dense + Sparse 双路编码。架构设计上预留了切换能力，如需使用其他 Embedding 模型（如 BGE、llama.cpp / Ollama 本地模型）或调整编码策略，可在 Pipeline 中替换相应组件。
 
 ---
 
@@ -427,7 +428,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 - **配置文件结构示例** (`config/settings.yaml`)：
 	```yaml
 	llm:
-	  provider: azure  # azure | openai | ollama | deepseek
+	  provider: azure  # azure | openai | llamacpp | ollama | deepseek
 	  model: gpt-4o
 	  # provider-specific configs...
 	

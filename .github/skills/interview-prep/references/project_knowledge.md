@@ -96,8 +96,8 @@ A: Caption 文本被"缝合"进 Chunk 正文（作为 text 的一部分），参
 4. 只需增量修改，不需要改已有代码
 
 ### 当前支持
-- LLM：Azure OpenAI / OpenAI / Ollama / DeepSeek
-- Embedding：OpenAI / Azure / Ollama
+- LLM：Azure OpenAI / OpenAI / LlamaCpp（llama.cpp）/ Ollama（legacy）/ DeepSeek
+- Embedding：OpenAI / Azure / LlamaCpp / Ollama（legacy）
 - Vector Store：Chroma（接口预留 Qdrant/Pinecone 替换）
 - Reranker：Cross-Encoder / LLM Rerank / None
 
