@@ -11,9 +11,9 @@ llm:
 
 embedding:
   provider: llamacpp
-  model: nomic-embed-text-v1.5
+  model: bge-m3
   base_url: "http://localhost:8081/v1"
-  dimensions: 768
+  dimensions: 1024
 
 vector_store:
   provider: chroma

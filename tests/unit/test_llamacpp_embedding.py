@@ -21,7 +21,7 @@ def _embedding_response(dim: int = 4, count: int = 2) -> dict:
     for i in range(count):
         base = 0.1 * (i + 1)
         data.append({"index": i, "embedding": [base + j * 0.1 for j in range(dim)]})
-    return {"data": data, "model": "nomic-embed-text-v1.5"}
+    return {"data": data, "model": "bge-m3"}
 
 
 @pytest.mark.unit
@@ -40,7 +40,7 @@ class TestLlamaCppEmbeddingEmbed:
         emb = LlamaCppEmbedding(
             EmbeddingSettings(
                 provider="llamacpp",
-                model="nomic-embed-text-v1.5",
+                model="bge-m3",
                 dimensions=4,
             )
         )
@@ -60,8 +60,8 @@ class TestLlamaCppEmbeddingEmbed:
         emb = LlamaCppEmbedding(
             EmbeddingSettings(
                 provider="llamacpp",
-                model="nomic-embed-text-v1.5",
-                dimensions=768,
+                model="bge-m3",
+                dimensions=1024,
             )
         )
         with pytest.raises(EmbeddingError, match="texts 不能为空"):
@@ -73,8 +73,8 @@ class TestLlamaCppEmbeddingEmbed:
         emb = LlamaCppEmbedding(
             EmbeddingSettings(
                 provider="llamacpp",
-                model="nomic-embed-text-v1.5",
-                dimensions=768,
+                model="bge-m3",
+                dimensions=1024,
                 base_url="http://localhost:8081/v1",
             )
         )
@@ -92,8 +92,8 @@ class TestLlamaCppEmbeddingEmbed:
         emb = LlamaCppEmbedding(
             EmbeddingSettings(
                 provider="llamacpp",
-                model="nomic-embed-text-v1.5",
-                dimensions=768,
+                model="bge-m3",
+                dimensions=1024,
             )
         )
         with pytest.raises(EmbeddingError, match=r"\[llamacpp\].*HTTP 500"):
@@ -111,8 +111,8 @@ class TestLlamaCppEmbeddingFactoryRouting:
             llm=base.llm,
             embedding=EmbeddingSettings(
                 provider="llamacpp",
-                model="nomic-embed-text-v1.5",
-                dimensions=768,
+                model="bge-m3",
+                dimensions=1024,
             ),
             vector_store=base.vector_store,
             retrieval=base.retrieval,

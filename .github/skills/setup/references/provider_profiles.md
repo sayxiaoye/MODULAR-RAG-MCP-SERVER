@@ -120,8 +120,8 @@ embedding:
 ```yaml
 embedding:
   provider: "llamacpp"
-  model: "nomic-embed-text-v1.5"
-  dimensions: 768
+  model: "bge-m3"
+  dimensions: 1024
   base_url: "http://localhost:8081/v1"
 ```
 
@@ -256,7 +256,7 @@ SDK: `pip install openai` (uses OpenAI-compatible protocol)
 | text-embedding-3-small          | 1536 (512–1536) | Matryoshka — variable dims supported |
 | text-embedding-3-large          | 3072 (256–3072) | Matryoshka — 256d still beats ada-002 |
 | text-embedding-ada-002 (legacy) | 1536       | Not recommended for new projects |
-| nomic-embed-text-v1.5 (LlamaCpp) | 768     | via llama-server `--embedding`; confirm with `/v1/embeddings` |
+| bge-m3 (LlamaCpp) | 1024     | via llama-server `--embedding`; confirm with `/v1/embeddings` |
 | nomic-embed-text (Ollama, legacy) | 768      | |
 | mxbai-embed-large (Ollama, legacy) | 1024    | |
 | text-embedding-v3 (Qwen)        | 1024       | |

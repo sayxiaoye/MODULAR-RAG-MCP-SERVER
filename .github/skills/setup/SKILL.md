@@ -124,7 +124,7 @@ For each secret, prefer asking whether to store it in an environment variable or
 - Ask: Chat base URL (default: `http://localhost:8080/v1`)
 - Ask: LLM model name (must match `llama-server` loaded GGUF / `--alias`)
 - Ask: Embedding base URL (default: `http://localhost:8081/v1` — separate instance recommended)
-- Ask: Embedding model name (default: `nomic-embed-text-v1.5`)
+- Ask: Embedding model name (default: `bge-m3`)
 - Verify llama-server: `curl http://localhost:8080/v1/models` (chat) and embedding port if used
 - Refer to [references/provider_profiles.md](references/provider_profiles.md) and [references/new_provider_guide.md](references/new_provider_guide.md)
 - If provider code not yet implemented: inform user and offer to implement B7.9/B7.10
