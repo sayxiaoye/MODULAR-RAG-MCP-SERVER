@@ -2018,7 +2018,7 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| E1 | MCP Server 入口与 Stdio 约束 | [ ] | | |
+| E1 | MCP Server 入口与 Stdio 约束 | [x] | 2026-08-25 | MCPServer + Stdio NDJSON + initialize 握手，4个集成测试 |
 | E2 | Protocol Handler 协议解析与能力协商 | [ ] | | |
 | E3 | query_knowledge_hub Tool | [ ] | | |
 | E4 | list_collections Tool | [ ] | | |
@@ -2073,15 +2073,15 @@ dashboard:
 | 阶段 | 总任务数 | 已完成 | 进度 |
 |------|---------|--------|------|
 | 阶段 A | 3 | 3 | 100% |
-| 阶段 B | 18 | 17 | 94% |
+| 阶段 B | 18 | 18 | 100% |
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
-| 阶段 E | 6 | 0 | 0% |
+| 阶段 E | 6 | 1 | 17% |
 | 阶段 F | 5 | 0 | 0% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **42** | **60%** |
+| **总计** | **70** | **44** | **63%** |
 
 
 ---
@@ -2827,7 +2827,7 @@ dashboard:
 
 ## 阶段 E：MCP Server 层与 Tools（目标：对外可用的 MCP tools）
 
-### E1：MCP Server 入口与 Stdio 约束
+### E1：MCP Server 入口与 Stdio 约束 ✅
 - **目标**：实现 `mcp_server/server.py`：遵循"stdout 只输出 MCP 消息，日志到 stderr"。
 - **修改文件**：
   - `src/mcp_server/server.py`
