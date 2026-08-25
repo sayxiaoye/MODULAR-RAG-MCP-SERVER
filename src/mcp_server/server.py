@@ -14,6 +14,7 @@ from mcp_server.protocol_handler import (
     SERVER_NAME,
     SERVER_VERSION,
 )
+from mcp_server.tools.registry import build_default_protocol_handler
 from observability.logger import get_logger
 
 # JSON-RPC 解析错误在 transport 层处理
@@ -31,7 +32,7 @@ class MCPServer:
         protocol_handler: ProtocolHandler | None = None,
     ) -> None:
         self._settings = settings
-        self._handler = protocol_handler or ProtocolHandler(settings=settings)
+        self._handler = protocol_handler or build_default_protocol_handler(settings=settings)
 
     def run_stdio(self, input_stream: TextIO | None = None, output_stream: TextIO | None = None) -> None:
         """启动 Stdio 主循环，直到输入流关闭。"""
@@ -139,7 +140,7 @@ def run_stdio_server() -> None:
         logger.error("配置加载失败，无法启动 MCP Server: %s", exc)
         sys.exit(1)
 
-    MCPServer(settings=settings).run_stdio()
+    MCPServer(settings=settings, protocol_handler=build_default_protocol_handler(settings)).run_stdio()
 
 
 def main() -> None:

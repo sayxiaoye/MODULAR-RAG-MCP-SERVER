@@ -2,5 +2,12 @@
 
 from mcp_server.protocol_handler import ProtocolHandler, ToolDefinition
 from mcp_server.server import MCPServer, run_stdio_server
+from mcp_server.tools.registry import build_default_protocol_handler
 
-__all__ = ["MCPServer", "ProtocolHandler", "ToolDefinition", "run_stdio_server"]
+__all__ = [
+    "MCPServer",
+    "ProtocolHandler",
+    "ToolDefinition",
+    "build_default_protocol_handler",
+    "run_stdio_server",
+]

@@ -10,7 +10,14 @@ from pathlib import Path
 import pytest
 
 from mcp_server.server import MCPServer
-from mcp_server.protocol_handler import SERVER_NAME, SERVER_VERSION, SUPPORTED_PROTOCOL_VERSION
+from mcp_server.protocol_handler import (
+    ProtocolHandler,
+    SERVER_NAME,
+    SERVER_VERSION,
+    SUPPORTED_PROTOCOL_VERSION,
+)
+from mcp_server.tools.query_knowledge_hub import TOOL_NAME, build_query_knowledge_hub_tool
+from core.types import RetrievalResult
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVER_MODULE = "mcp_server.server"
@@ -134,3 +141,84 @@ class TestMCPServerStdio:
 
         assert response is not None
         assert response["error"]["code"] == -32601
+
+
+@pytest.mark.integration
+class TestQueryKnowledgeHubTool:
+    """验证 E3：query_knowledge_hub 返回 Markdown 与 structured citations。"""
+
+    def test_tools_call_returns_markdown_and_citations(self) -> None:
+        """tools/call 应返回带 [1] 标注的 Markdown 与 citations 字段。"""
+        fake_result = type(
+            "PipelineResult",
+            (),
+            {
+                "final_results": [
+                    RetrievalResult(
+                        chunk_id="chunk-abc",
+                        score=0.88,
+                        text="Modular RAG MCP Server retrieval result.",
+                        metadata={"source_path": "tests/fixtures/sample.pdf", "page": 2},
+                    )
+                ]
+            },
+        )()
+
+        def _fake_pipeline(*_args, **_kwargs):
+            return fake_result
+
+        handler_tool = build_query_knowledge_hub_tool(pipeline_runner=_fake_pipeline)
+        server = MCPServer(protocol_handler=ProtocolHandler(tools=[handler_tool]))
+
+        response = server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 10,
+                "method": "tools/call",
+                "params": {
+                    "name": TOOL_NAME,
+                    "arguments": {"query": "RAG retrieval", "top_k": 3},
+                },
+            }
+        )
+
+        assert response is not None
+        assert "result" in response
+        result = response["result"]
+        markdown = result["content"][0]["text"]
+        assert "[1]" in markdown
+        assert result["isError"] is False
+
+        citations = result["structuredContent"]["citations"]
+        assert len(citations) == 1
+        assert citations[0]["source"] == "sample.pdf"
+        assert citations[0]["page"] == 2
+        assert citations[0]["chunk_id"] == "chunk-abc"
+        assert citations[0]["score"] == pytest.approx(0.88)
+
+    def test_tools_call_empty_results_returns_hint(self) -> None:
+        """无命中时应返回友好提示，而非空 content。"""
+        def _empty_pipeline(*_args, **_kwargs):
+            return type("PipelineResult", (), {"final_results": []})()
+
+        handler_tool = build_query_knowledge_hub_tool(pipeline_runner=_empty_pipeline)
+        from mcp_server.protocol_handler import ProtocolHandler
+
+        server = MCPServer(protocol_handler=ProtocolHandler(tools=[handler_tool]))
+        response = server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 11,
+                "method": "tools/call",
+                "params": {
+                    "name": TOOL_NAME,
+                    "arguments": {"query": "no hits"},
+                },
+            }
+        )
+
+        assert response is not None
+        result = response["result"]
+        assert result["content"][0]["text"]
+        assert "未找到相关文档" in result["content"][0]["text"]
+        assert result["structuredContent"]["citations"] == []
