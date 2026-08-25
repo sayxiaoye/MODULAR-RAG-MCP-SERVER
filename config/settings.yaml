@@ -46,8 +46,8 @@ observability:
   structured_logging: true
 
 ingestion:
-  chunk_size: 1000
-  chunk_overlap: 200
+  chunk_size: 400   # 保守值，适配 512 token 上限
+  chunk_overlap: 80
   splitter: recursive
   batch_size: 100
   chunk_refiner:
