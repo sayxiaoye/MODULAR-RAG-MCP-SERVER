@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from mcp_server.server import MCPServer, SERVER_NAME, SERVER_VERSION, SUPPORTED_PROTOCOL_VERSION
+from mcp_server.server import MCPServer
+from mcp_server.protocol_handler import SERVER_NAME, SERVER_VERSION, SUPPORTED_PROTOCOL_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SERVER_MODULE = "mcp_server.server"
@@ -126,7 +127,7 @@ class TestMCPServerStdio:
             {
                 "jsonrpc": "2.0",
                 "id": 99,
-                "method": "tools/list",
+                "method": "unknown/method",
                 "params": {},
             }
         )
