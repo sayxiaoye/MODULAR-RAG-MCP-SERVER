@@ -2025,7 +2025,7 @@ dashboard:
 | E1 | MCP Server 入口与 Stdio 约束 | [x] | 2026-08-25 | MCPServer + Stdio NDJSON + initialize 握手，4个集成测试 |
 | E2 | Protocol Handler 协议解析与能力协商 | [x] | 2026-08-25 | ProtocolHandler + initialize/tools/list/tools/call，10个单元测试 |
 | E3 | query_knowledge_hub Tool | [x] | 2026-08-25 | query_knowledge_hub + ResponseBuilder/CitationGenerator，5个测试 |
-| E4 | list_collections Tool | [ ] | | |
+| E4 | list_collections Tool | [x] | 2026-08-26 | list_collections + discover_collections，4个单元测试 |
 | E5 | get_document_summary Tool | [ ] | | |
 | E6 | 多模态返回组装（Text + Image） | [ ] | | |
 
@@ -2080,12 +2080,12 @@ dashboard:
 | 阶段 B | 18 | 18 | 100% |
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
-| 阶段 E | 6 | 3 | 50% |
+| 阶段 E | 6 | 4 | 67% |
 | 阶段 F | 5 | 0 | 0% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **46** | **66%** |
+| **总计** | **70** | **47** | **67%** |
 
 
 ---
@@ -2878,7 +2878,7 @@ dashboard:
   - 无结果时返回友好提示而非空数组
 - **测试方法**：`pytest -q tests/integration/test_mcp_server.py -k query_knowledge_hub`。
 
-### E4：实现 tool：list_collections
+### E4：实现 tool：list_collections ✅
 - **目标**：实现 `tools/list_collections.py`：列出 `data/documents/` 下集合并附带统计（可延后到下一步）。
 - **修改文件**：
   - `src/mcp_server/tools/list_collections.py`
