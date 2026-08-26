@@ -163,6 +163,7 @@ smart-knowledge-hub/
 │   │   ├── protocol_handler.py          # JSON-RPC 协议处理
 │   │   └── tools/                       # MCP Tools 定义
 │   │       ├── __init__.py
+│   │       ├── registry.py              # MCP Tools 注册表（集中注册 ToolDefinition）
 │   │       ├── query_knowledge_hub.py   # 主检索工具
 │   │       ├── list_collections.py      # 列出集合工具
 │   │       └── get_document_summary.py  # 文档摘要工具
@@ -179,7 +180,8 @@ smart-knowledge-hub/
 │   │   │   ├── dense_retriever.py       # 稠密向量检索
 │   │   │   ├── sparse_retriever.py      # 稀疏检索 (BM25)
 │   │   │   ├── fusion.py                # 结果融合 (RRF 算法)
-│   │   │   └── reranker.py              # 重排序模块 (None/CrossEncoder/LLM)
+│   │   │   ├── reranker.py              # 重排序模块 (None/CrossEncoder/LLM)
+│   │   │   └── query_pipeline.py        # 查询流水线编排 (CLI/MCP 复用 execute_query_pipeline)
 │   │   │
 │   │   ├── response/                    # 响应构建模块
 │   │   │   ├── __init__.py
@@ -373,7 +375,8 @@ smart-knowledge-hub/
 |-----|-----|----------|
 | `server.py` | MCP Server 主入口，处理 Stdio Transport 通信 | Python MCP SDK，JSON-RPC 2.0 |
 | `protocol_handler.py` | 协议解析与能力协商 | `initialize`、`tools/list`、`tools/call` |
-| `tools/*` | 对外暴露的工具函数实现 | 装饰器定义，参数校验，响应格式化 |
+| `tools/registry.py` | MCP Tools 集中注册 | `build_default_tools`、`build_default_protocol_handler`；E4/E5 新 Tool 在此扩展 |
+| `tools/*` | 对外暴露的工具函数实现 | 参数校验，调用 Core 流水线，响应格式化 |
 
 #### 5.3.2 Core 层
 
@@ -387,6 +390,7 @@ smart-knowledge-hub/
 | `sparse_retriever.py` | BM25 关键词检索 | 倒排索引查询，TF-IDF 打分 |
 | `fusion.py` | 结果融合 | RRF 算法，排名倒数加权 |
 | `reranker.py` | 精排重排 | CrossEncoder / LLM Rerank / Fallback 回退 |
+| `query_pipeline.py` | 查询流水线编排 | `execute_query_pipeline`、`settings_for_query`；并行 Dense/Sparse + Fusion + Rerank；CLI 与 MCP Tool 共享 |
 | `response_builder.py` | 响应构建 | MCP 响应格式化，Markdown 生成 |
 | `citation_generator.py` | 引用生成 | 从检索结果生成结构化引用列表 |
 | `multimodal_assembler.py` | 多模态组装 | Text + Image Base64 编码，MCP 多内容类型 |
@@ -398,7 +402,7 @@ smart-knowledge-hub/
 | 脚本 | 职责 | 关键技术点 |
 |-----|-----|----------|
 | `ingest.py` | 离线数据摄取入口 | CLI 参数解析，调用 Ingestion Pipeline，支持 `--collection`/`--path`/`--force` |
-| `query.py` | 在线查询测试入口 | CLI 参数解析，调用 HybridSearch + Reranker，支持 `--query`/`--top-k`/`--verbose` |
+| `query.py` | 在线查询测试入口 | CLI 参数解析，委托 `query_pipeline.execute_query_pipeline`，支持 `--query`/`--top-k`/`--verbose` |
 | `evaluate.py` | 评估运行入口 | 加载 golden_test_set，运行评估，输出 metrics |
 | `start_dashboard.py` | Dashboard 启动入口 | Streamlit 应用启动 |
 

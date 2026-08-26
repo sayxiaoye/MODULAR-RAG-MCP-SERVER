@@ -877,9 +877,10 @@
 - **测试方法**：`pytest -q tests/unit/test_reranker_fallback.py`。
 
 ### D7：脚本入口 query.py（查询可用） ✅
-- **目标**：实现 `scripts/query.py`，作为在线查询的命令行入口，调用完整的 HybridSearch + Reranker 流程并输出检索结果。
+- **目标**：实现 `scripts/query.py`，作为在线查询的命令行入口，调用 `query_pipeline.execute_query_pipeline` 并输出检索结果。
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）
 - **修改文件**：
+  - `src/core/query_engine/query_pipeline.py`（新增：CLI/MCP 共享查询流水线）
   - `scripts/query.py`
 - **实现功能**：
   - **参数支持**：
@@ -892,12 +893,9 @@
     - 默认模式：Top-K 结果（序号、score、文本摘要、来源文件、页码）
     - Verbose 模式：额外显示 Dense 召回结果、Sparse 召回结果、Fusion 结果、Rerank 结果
   - **内部流程**：
-    1. 加载配置 `Settings`
-    2. 初始化组件（EmbeddingClient、VectorStore、BM25Indexer、Reranker）
-    3. 创建 `QueryProcessor`、`DenseRetriever`、`SparseRetriever`、`HybridSearch` 实例
-    4. 调用 `HybridSearch.search()` 获取候选结果
-    5. 调用 `Reranker.rerank()` 进行精排（除非 `--no-rerank`）
-    6. 格式化输出结果
+    1. 加载配置 `Settings`（`settings_for_query` 处理 collection/data_root 覆盖）
+    2. 调用 `execute_query_pipeline()`（内部组装 QueryProcessor/Dense/Sparse/Fusion/Reranker）
+    3. 格式化输出结果（`render_query_output`）
 - **验收标准**：
   - 命令行可运行：`python scripts/query.py --query "如何配置 Azure？"`
   - 返回格式化的 Top-K 检索结果
@@ -907,7 +905,7 @@
 - **与 MCP Tool 的关系**：
   - `scripts/query.py` 是开发调试用的命令行工具
   - `E3 query_knowledge_hub` 是生产环境的 MCP Tool
-  - 两者共享 Core 层逻辑（HybridSearch + Reranker），但入口和输出格式不同
+  - 两者通过 `core/query_engine/query_pipeline.py` 共享同一套检索编排逻辑，入口与输出格式不同
 
 ---
 
@@ -945,6 +943,8 @@
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）、E1（Server）、E2（Protocol Handler）
 - **修改文件**：
   - `src/mcp_server/tools/query_knowledge_hub.py`
+  - `src/mcp_server/tools/registry.py`（新增：默认 Tool 注册与 ProtocolHandler 工厂）
+  - `src/core/query_engine/query_pipeline.py`（共享检索流水线，供 Tool 调用）
   - `src/core/response/response_builder.py`（新增：构建 MCP 响应格式）
   - `src/core/response/citation_generator.py`（新增：生成引用信息）
   - `tests/unit/test_response_builder.py`（新增）
@@ -953,6 +953,7 @@
   - `ResponseBuilder.build(retrieval_results, query) -> MCPResponse`：构建 MCP 格式响应
   - `CitationGenerator.generate(retrieval_results) -> List[Citation]`：生成引用列表
   - `query_knowledge_hub(query, top_k?, collection?) -> MCPToolResult`：Tool 入口函数
+  - `build_default_tools()` / `build_default_protocol_handler()`：在 `registry.py` 集中注册默认 Tools
 - **验收标准**：
   - tool 返回 `content[0]` 为可读 Markdown（含 `[1]`、`[2]` 等引用标注）
   - `structuredContent.citations` 包含 `source`/`page`/`chunk_id`/`score` 字段

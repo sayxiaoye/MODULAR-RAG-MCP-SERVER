@@ -1421,6 +1421,7 @@ smart-knowledge-hub/
 │   │   ├── protocol_handler.py          # JSON-RPC 协议处理
 │   │   └── tools/                       # MCP Tools 定义
 │   │       ├── __init__.py
+│   │       ├── registry.py              # MCP Tools 注册表（集中注册 ToolDefinition）
 │   │       ├── query_knowledge_hub.py   # 主检索工具
 │   │       ├── list_collections.py      # 列出集合工具
 │   │       └── get_document_summary.py  # 文档摘要工具
@@ -1437,7 +1438,8 @@ smart-knowledge-hub/
 │   │   │   ├── dense_retriever.py       # 稠密向量检索
 │   │   │   ├── sparse_retriever.py      # 稀疏检索 (BM25)
 │   │   │   ├── fusion.py                # 结果融合 (RRF 算法)
-│   │   │   └── reranker.py              # 重排序模块 (None/CrossEncoder/LLM)
+│   │   │   ├── reranker.py              # 重排序模块 (None/CrossEncoder/LLM)
+│   │   │   └── query_pipeline.py        # 查询流水线编排 (CLI/MCP 复用 execute_query_pipeline)
 │   │   │
 │   │   ├── response/                    # 响应构建模块
 │   │   │   ├── __init__.py
@@ -1631,7 +1633,8 @@ smart-knowledge-hub/
 |-----|-----|----------|
 | `server.py` | MCP Server 主入口，处理 Stdio Transport 通信 | Python MCP SDK，JSON-RPC 2.0 |
 | `protocol_handler.py` | 协议解析与能力协商 | `initialize`、`tools/list`、`tools/call` |
-| `tools/*` | 对外暴露的工具函数实现 | 装饰器定义，参数校验，响应格式化 |
+| `tools/registry.py` | MCP Tools 集中注册 | `build_default_tools`、`build_default_protocol_handler`；E4/E5 新 Tool 在此扩展 |
+| `tools/*` | 对外暴露的工具函数实现 | 参数校验，调用 Core 流水线，响应格式化 |
 
 #### 5.3.2 Core 层
 
@@ -1645,6 +1648,7 @@ smart-knowledge-hub/
 | `sparse_retriever.py` | BM25 关键词检索 | 倒排索引查询，TF-IDF 打分 |
 | `fusion.py` | 结果融合 | RRF 算法，排名倒数加权 |
 | `reranker.py` | 精排重排 | CrossEncoder / LLM Rerank / Fallback 回退 |
+| `query_pipeline.py` | 查询流水线编排 | `execute_query_pipeline`、`settings_for_query`；并行 Dense/Sparse + Fusion + Rerank；CLI 与 MCP Tool 共享 |
 | `response_builder.py` | 响应构建 | MCP 响应格式化，Markdown 生成 |
 | `citation_generator.py` | 引用生成 | 从检索结果生成结构化引用列表 |
 | `multimodal_assembler.py` | 多模态组装 | Text + Image Base64 编码，MCP 多内容类型 |
@@ -1656,7 +1660,7 @@ smart-knowledge-hub/
 | 脚本 | 职责 | 关键技术点 |
 |-----|-----|----------|
 | `ingest.py` | 离线数据摄取入口 | CLI 参数解析，调用 Ingestion Pipeline，支持 `--collection`/`--path`/`--force` |
-| `query.py` | 在线查询测试入口 | CLI 参数解析，调用 HybridSearch + Reranker，支持 `--query`/`--top-k`/`--verbose` |
+| `query.py` | 在线查询测试入口 | CLI 参数解析，委托 `query_pipeline.execute_query_pipeline`，支持 `--query`/`--top-k`/`--verbose` |
 | `evaluate.py` | 评估运行入口 | 加载 golden_test_set，运行评估，输出 metrics |
 | `start_dashboard.py` | Dashboard 启动入口 | Streamlit 应用启动 |
 
@@ -2791,9 +2795,10 @@ dashboard:
 - **测试方法**：`pytest -q tests/unit/test_reranker_fallback.py`。
 
 ### D7：脚本入口 query.py（查询可用） ✅
-- **目标**：实现 `scripts/query.py`，作为在线查询的命令行入口，调用完整的 HybridSearch + Reranker 流程并输出检索结果。
+- **目标**：实现 `scripts/query.py`，作为在线查询的命令行入口，调用 `query_pipeline.execute_query_pipeline` 并输出检索结果。
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）
 - **修改文件**：
+  - `src/core/query_engine/query_pipeline.py`（新增：CLI/MCP 共享查询流水线）
   - `scripts/query.py`
 - **实现功能**：
   - **参数支持**：
@@ -2806,12 +2811,9 @@ dashboard:
     - 默认模式：Top-K 结果（序号、score、文本摘要、来源文件、页码）
     - Verbose 模式：额外显示 Dense 召回结果、Sparse 召回结果、Fusion 结果、Rerank 结果
   - **内部流程**：
-    1. 加载配置 `Settings`
-    2. 初始化组件（EmbeddingClient、VectorStore、BM25Indexer、Reranker）
-    3. 创建 `QueryProcessor`、`DenseRetriever`、`SparseRetriever`、`HybridSearch` 实例
-    4. 调用 `HybridSearch.search()` 获取候选结果
-    5. 调用 `Reranker.rerank()` 进行精排（除非 `--no-rerank`）
-    6. 格式化输出结果
+    1. 加载配置 `Settings`（`settings_for_query` 处理 collection/data_root 覆盖）
+    2. 调用 `execute_query_pipeline()`（内部组装 QueryProcessor/Dense/Sparse/Fusion/Reranker）
+    3. 格式化输出结果（`render_query_output`）
 - **验收标准**：
   - 命令行可运行：`python scripts/query.py --query "如何配置 Azure？"`
   - 返回格式化的 Top-K 检索结果
@@ -2821,7 +2823,7 @@ dashboard:
 - **与 MCP Tool 的关系**：
   - `scripts/query.py` 是开发调试用的命令行工具
   - `E3 query_knowledge_hub` 是生产环境的 MCP Tool
-  - 两者共享 Core 层逻辑（HybridSearch + Reranker），但入口和输出格式不同
+  - 两者通过 `core/query_engine/query_pipeline.py` 共享同一套检索编排逻辑，入口与输出格式不同
 
 ---
 
@@ -2859,6 +2861,8 @@ dashboard:
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）、E1（Server）、E2（Protocol Handler）
 - **修改文件**：
   - `src/mcp_server/tools/query_knowledge_hub.py`
+  - `src/mcp_server/tools/registry.py`（新增：默认 Tool 注册与 ProtocolHandler 工厂）
+  - `src/core/query_engine/query_pipeline.py`（共享检索流水线，供 Tool 调用）
   - `src/core/response/response_builder.py`（新增：构建 MCP 响应格式）
   - `src/core/response/citation_generator.py`（新增：生成引用信息）
   - `tests/unit/test_response_builder.py`（新增）
@@ -2867,6 +2871,7 @@ dashboard:
   - `ResponseBuilder.build(retrieval_results, query) -> MCPResponse`：构建 MCP 格式响应
   - `CitationGenerator.generate(retrieval_results) -> List[Citation]`：生成引用列表
   - `query_knowledge_hub(query, top_k?, collection?) -> MCPToolResult`：Tool 入口函数
+  - `build_default_tools()` / `build_default_protocol_handler()`：在 `registry.py` 集中注册默认 Tools
 - **验收标准**：
   - tool 返回 `content[0]` 为可读 Markdown（含 `[1]`、`[2]` 等引用标注）
   - `structuredContent.citations` 包含 `source`/`page`/`chunk_id`/`score` 字段
