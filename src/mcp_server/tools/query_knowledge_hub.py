@@ -2,23 +2,18 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from core.query_engine.query_pipeline import (
+    DEFAULT_TOP_K,
+    execute_query_pipeline,
+    settings_for_query,
+)
 from core.response.response_builder import ResponseBuilder
 from core.settings import Settings, SettingsError, load_settings
 from core.trace.trace_context import TraceContext
 from mcp_server.protocol_handler import INVALID_PARAMS, ProtocolHandlerError, ToolDefinition
 from observability.logger import get_logger
-
-# 复用 scripts/query.py 中的查询流水线，避免重复编排逻辑
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPTS_ROOT = _REPO_ROOT / "scripts"
-if str(_SCRIPTS_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SCRIPTS_ROOT))
-
-from query import DEFAULT_TOP_K, execute_query_pipeline, _settings_for_query  # noqa: E402
 
 logger = get_logger("mcp_server.tools.query_knowledge_hub")
 
@@ -79,7 +74,7 @@ def query_knowledge_hub(
     except SettingsError as exc:
         raise ProtocolHandlerError(INVALID_PARAMS, f"配置加载失败: {exc}") from exc
 
-    resolved_settings, bm25_root = _settings_for_query(
+    resolved_settings, bm25_root = settings_for_query(
         base_settings,
         collection.strip() if isinstance(collection, str) else None,
         data_root=None,
