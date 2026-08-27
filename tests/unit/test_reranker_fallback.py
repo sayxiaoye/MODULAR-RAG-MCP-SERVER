@@ -123,7 +123,7 @@ class TestRerankerFallback:
         assert result.fallback is False
 
     def test_records_trace_with_fallback_flag(self) -> None:
-        """trace 中应记录 reranker 阶段及 fallback 标记。"""
+        """trace 中应记录 rerank 阶段及 fallback 标记。"""
         settings = load_settings()
         backend = FailingBackend(RerankerFallbackSignal("mock failure"))
         reranker = Reranker(settings, backend=backend)
@@ -132,7 +132,7 @@ class TestRerankerFallback:
         reranker.rerank("query", [_candidate("a")], top_k=1, trace=trace)
         trace.finish()
         payload = trace.to_dict()
-        rerank_stage = next(stage for stage in payload["stages"] if stage["name"] == "reranker")
+        rerank_stage = next(stage for stage in payload["stages"] if stage["name"] == "rerank")
 
         assert rerank_stage["fallback"] is True
         assert rerank_stage["fallback_reason"] == "mock failure"

@@ -10,10 +10,12 @@ from core.query_engine.dense_retriever import DenseRetrieverError
 from core.query_engine.fusion import RRFFusion
 from core.query_engine.hybrid_search import HybridSearch, HybridSearchError
 from core.query_engine.query_processor import QueryProcessor
+from core.query_engine.reranker import Reranker
 from core.query_engine.sparse_retriever import SparseRetrieverError
 from core.settings import load_settings
 from core.trace.trace_context import TraceContext
 from core.types import RetrievalResult
+from libs.reranker.base_reranker import NoneReranker
 
 
 def _result(
@@ -190,6 +192,40 @@ class TestHybridSearch:
         assert "query_processor" in stages
         assert "fusion" in stages
         assert "hybrid_search" in stages
+
+    def test_query_trace_records_canonical_stages(self, settings) -> None:
+        """F3：一次 query 应包含规范阶段名，且每阶段带 elapsed_ms 与 method。"""
+        engine = HybridSearch(
+            settings,
+            dense_retriever=FakeDenseRetriever([_result("a")]),
+            sparse_retriever=FakeSparseRetriever([_result("b")]),
+            fusion=RRFFusion(settings),
+        )
+        reranker = Reranker(settings, backend=NoneReranker())
+        trace = TraceContext(trace_type="query")
+
+        results = engine.search("Azure 配置", top_k=2, trace=trace)
+        reranker.rerank("Azure 配置", results, top_k=2, trace=trace)
+
+        trace.finish()
+        payload = trace.to_dict()
+        assert payload["trace_type"] == "query"
+
+        by_name = {stage["name"]: stage for stage in payload["stages"]}
+        expected = (
+            "query_processing",
+            "dense_retrieval",
+            "sparse_retrieval",
+            "fusion",
+            "rerank",
+        )
+        for name in expected:
+            stage = by_name[name]
+            assert "elapsed_ms" in stage
+            assert isinstance(stage["elapsed_ms"], (int, float))
+            assert stage["elapsed_ms"] >= 0
+            assert "method" in stage
+            assert stage["method"]
 
     def test_invalid_top_k_raises(self, settings) -> None:
         engine = HybridSearch(

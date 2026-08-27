@@ -1,4 +1,7 @@
-"""Core 层 Reranker 编排：接入 libs.reranker 后端，失败时回退 fusion 排名。"""
+"""Core 层 Reranker 编排：接入 libs.reranker 后端，失败时回退 fusion 排名。
+
+F3 将精排阶段写入 TraceContext，阶段名为 ``rerank``。
+"""
 
 from __future__ import annotations
 
@@ -134,8 +137,8 @@ class Reranker:
             fallback_reason=reason,
         )
 
-    @staticmethod
     def _record_trace(
+        self,
         trace: Any | None,
         *,
         elapsed_ms: float,
@@ -143,10 +146,14 @@ class Reranker:
         fallback_reason: str | None,
         result_count: int,
     ) -> None:
+        """写入 F3 规范阶段名 ``rerank``，method 对齐配置中的 rerank.provider。"""
         if isinstance(trace, TraceContext):
+            provider = self._settings.rerank.provider
             trace.record_stage(
-                "reranker",
+                "rerank",
                 elapsed_ms=elapsed_ms,
+                method=provider,
+                provider=provider,
                 fallback=fallback,
                 fallback_reason=fallback_reason,
                 result_count=result_count,
