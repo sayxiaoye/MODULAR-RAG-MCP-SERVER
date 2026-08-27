@@ -27,7 +27,7 @@ class TestGetDocumentSummary:
                 title="Sample Document",
                 summary="A short summary.",
                 tags=["rag", "test"],
-                source_path="tests/fixtures/sample_documents/simple.pdf",
+                source_path="tests/fixtures/sample_documents/sample.pdf",
                 chunk_count=3,
             )
 

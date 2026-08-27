@@ -25,7 +25,7 @@ INPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "doc_id": {
             "type": "string",
-            "description": "文档标识，可为 doc_hash（SHA256）或文件名（如 simple.pdf）",
+            "description": "文档标识，可为 doc_hash（SHA256）或文件名（如 sample.pdf）",
         },
         "collection": {
             "type": "string",

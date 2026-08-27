@@ -23,7 +23,7 @@ class TestPdfLoaderContract:
 
     def test_load_produces_document_with_source_path(self, tmp_path: Path) -> None:
         """纯文本 PDF（无图）应产出含 source_path 的 Document。"""
-        pdf_path = _write_dummy_pdf(tmp_path / "simple.pdf")
+        pdf_path = _write_dummy_pdf(tmp_path / "sample.pdf")
         loader = PdfLoader(
             images_root=tmp_path / "images",
             markdown_converter=lambda p: "# Sample\n\nHello from PDF.",

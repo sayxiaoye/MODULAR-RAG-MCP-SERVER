@@ -142,8 +142,8 @@ def test_N01():
     ok = clear_all()
     print(f"  Result: {'OK' if ok else 'FAILED'}")
 
-    print("\n[Step 1] Ingest simple.pdf to default")
-    ec, out = ingest(FIXTURES / "simple.pdf")
+    print("\n[Step 1] Ingest sample.pdf to default")
+    ec, out = ingest(FIXTURES / "sample.pdf")
     print(f"  exit_code={ec}")
     chunks = "chunks" in out.lower()
     print(f"  has_chunks_in_output={chunks}")
@@ -151,28 +151,28 @@ def test_N01():
     print("\n[Step 2] Query 'Sample Document PDF loader' → expect hit")
     ec2, out2 = query("Sample Document PDF loader")
     sources = extract_sources(out2)
-    has_simple = any("simple.pdf" in s for s in sources)
+    has_sample = any("sample.pdf" in s for s in sources)
     print(f"  exit_code={ec2}")
     print(f"  sources={sources[:5]}")
-    print(f"  contains_simple_pdf={has_simple}")
+    print(f"  contains_sample_pdf={has_sample}")
 
-    print("\n[Step 3] Delete simple.pdf from default")
-    del_result = delete_document("simple.pdf", "default")
+    print("\n[Step 3] Delete sample.pdf from default")
+    del_result = delete_document("sample.pdf", "default")
     print(f"  delete_result={del_result}")
 
-    print("\n[Step 4] Query again → expect NO simple.pdf")
+    print("\n[Step 4] Query again → expect NO sample.pdf")
     ec4, out4 = query("Sample Document PDF loader")
     sources4 = extract_sources(out4)
-    has_simple4 = any("simple.pdf" in s for s in sources4)
+    has_sample4 = any("sample.pdf" in s for s in sources4)
     print(f"  exit_code={ec4}")
     print(f"  sources={sources4[:5]}")
-    print(f"  contains_simple_pdf={has_simple4}")
+    print(f"  contains_sample_pdf={has_sample4}")
 
     print("\n" + "=" * 60)
-    passed = has_simple and not has_simple4
+    passed = has_sample and not has_sample4
     print(f"VERDICT: {'PASS' if passed else 'FAIL'}")
-    print(f"  Step 2 found simple.pdf: {has_simple}")
-    print(f"  Step 4 no simple.pdf:    {not has_simple4}")
+    print(f"  Step 2 found sample.pdf: {has_sample}")
+    print(f"  Step 4 no sample.pdf:    {not has_sample4}")
     return passed
 
 
@@ -182,8 +182,8 @@ def test_N03():
     print("TEST N-03: Multi-collection isolation")
     print("=" * 60)
 
-    print("\n[Step 1] Ingest simple.pdf → isolate_a")
-    ec1, _ = ingest(FIXTURES / "simple.pdf", "isolate_a", force=True)
+    print("\n[Step 1] Ingest sample.pdf → isolate_a")
+    ec1, _ = ingest(FIXTURES / "sample.pdf", "isolate_a", force=True)
     print(f"  exit_code={ec1}")
 
     print("\n[Step 2] Ingest complex_technical_doc.pdf → isolate_b")
@@ -193,9 +193,9 @@ def test_N03():
     print("\n[Step 3] Query isolate_a for 'Sample Document'")
     ec3, out3 = query("Sample Document PDF loader", "isolate_a")
     src_a = extract_sources(out3)
-    only_simple = all("simple.pdf" in s for s in src_a if s)
+    only_sample = all("sample.pdf" in s for s in src_a if s)
     print(f"  sources={src_a[:5]}")
-    print(f"  all_from_simple_pdf={only_simple}")
+    print(f"  all_from_sample_pdf={only_sample}")
 
     print("\n[Step 4] Query isolate_b for 'Retrieval-Augmented Generation'")
     ec4, out4 = query("Retrieval-Augmented Generation", "isolate_b")
@@ -205,9 +205,9 @@ def test_N03():
     print(f"  all_from_complex_pdf={only_complex}")
 
     print("\n" + "=" * 60)
-    passed = only_simple and only_complex and len(src_a) > 0 and len(src_b) > 0
+    passed = only_sample and only_complex and len(src_a) > 0 and len(src_b) > 0
     print(f"VERDICT: {'PASS' if passed else 'FAIL'}")
-    print(f"  isolate_a only has simple.pdf:             {only_simple} (count={len(src_a)})")
+    print(f"  isolate_a only has sample.pdf:             {only_sample} (count={len(src_a)})")
     print(f"  isolate_b only has complex_technical_doc:   {only_complex} (count={len(src_b)})")
     return passed
 
@@ -227,19 +227,19 @@ def test_N04():
     print(f"  exit_code={ec2}")
     print(f"  sources={src2[:3]} (expect empty or error)")
 
-    print("\n[Step 3] Ingest simple.pdf")
-    ec3, _ = ingest(FIXTURES / "simple.pdf")
+    print("\n[Step 3] Ingest sample.pdf")
+    ec3, _ = ingest(FIXTURES / "sample.pdf")
     print(f"  exit_code={ec3}")
 
     print("\n[Step 4] Query 'Sample Document PDF loader' → expect hit")
     ec4, out4 = query("Sample Document PDF loader")
     src4 = extract_sources(out4)
-    has_simple = any("simple.pdf" in s for s in src4)
+    has_sample = any("sample.pdf" in s for s in src4)
     print(f"  sources={src4[:5]}")
-    print(f"  contains_simple_pdf={has_simple}")
+    print(f"  contains_sample_pdf={has_sample}")
 
     print("\n" + "=" * 60)
-    passed = has_simple
+    passed = has_sample
     print(f"VERDICT: {'PASS' if passed else 'FAIL'}")
     return passed
 
@@ -250,12 +250,12 @@ def test_N05():
     print("TEST N-05: Same file to multiple collections")
     print("=" * 60)
 
-    print("\n[Step 1] Ingest simple.pdf → col_1")
-    ec1, _ = ingest(FIXTURES / "simple.pdf", "col_1", force=True)
+    print("\n[Step 1] Ingest sample.pdf → col_1")
+    ec1, _ = ingest(FIXTURES / "sample.pdf", "col_1", force=True)
     print(f"  exit_code={ec1}")
 
-    print("\n[Step 2] Ingest simple.pdf → col_2")
-    ec2, _ = ingest(FIXTURES / "simple.pdf", "col_2", force=True)
+    print("\n[Step 2] Ingest sample.pdf → col_2")
+    ec2, _ = ingest(FIXTURES / "sample.pdf", "col_2", force=True)
     print(f"  exit_code={ec2}")
 
     print("\n[Step 3] Query col_1")
@@ -269,12 +269,12 @@ def test_N05():
     print(f"  col_2 sources={src4[:3]}")
 
     print("\n" + "=" * 60)
-    has1 = any("simple.pdf" in s for s in src3)
-    has2 = any("simple.pdf" in s for s in src4)
+    has1 = any("sample.pdf" in s for s in src3)
+    has2 = any("sample.pdf" in s for s in src4)
     passed = has1 and has2
     print(f"VERDICT: {'PASS' if passed else 'FAIL'}")
-    print(f"  col_1 has simple.pdf: {has1}")
-    print(f"  col_2 has simple.pdf: {has2}")
+    print(f"  col_1 has sample.pdf: {has1}")
+    print(f"  col_2 has sample.pdf: {has2}")
     return passed
 
 
@@ -284,21 +284,21 @@ def test_N06():
     print("TEST N-06: Delete from col_1 doesn't affect col_2")
     print("=" * 60)
 
-    # Ensure both collections have simple.pdf
-    print("\n[Step 1] Ensure simple.pdf in col_1 and col_2")
-    ingest(FIXTURES / "simple.pdf", "col_1", force=True)
-    ingest(FIXTURES / "simple.pdf", "col_2", force=True)
+    # Ensure both collections have sample.pdf
+    print("\n[Step 1] Ensure sample.pdf in col_1 and col_2")
+    ingest(FIXTURES / "sample.pdf", "col_1", force=True)
+    ingest(FIXTURES / "sample.pdf", "col_2", force=True)
 
-    print("\n[Step 2] Delete simple.pdf from col_1")
-    del_result = delete_document("simple.pdf", "col_1")
+    print("\n[Step 2] Delete sample.pdf from col_1")
+    del_result = delete_document("sample.pdf", "col_1")
     print(f"  delete_result={del_result}")
 
     print("\n[Step 3] Query col_2 → should still have data")
     _, out3 = query("Sample Document", "col_2")
     src3 = extract_sources(out3)
-    has_in_col2 = any("simple.pdf" in s for s in src3)
+    has_in_col2 = any("sample.pdf" in s for s in src3)
     print(f"  col_2 sources={src3[:3]}")
-    print(f"  col_2 still has simple.pdf: {has_in_col2}")
+    print(f"  col_2 still has sample.pdf: {has_in_col2}")
 
     print("\n" + "=" * 60)
     print(f"VERDICT: {'PASS' if has_in_col2 else 'FAIL'}")
@@ -413,7 +413,7 @@ def test_M06():
             yaml.dump(cfg, f)
 
         print("\n[Step 2] Run ingest")
-        r = run([str(SCRIPTS / "ingest.py"), "--path", str(FIXTURES / "simple.pdf"), "--force"])
+        r = run([str(SCRIPTS / "ingest.py"), "--path", str(FIXTURES / "sample.pdf"), "--force"])
         print(f"  exit_code={r.returncode}")
         print(f"  stdout (last 5 lines):")
         for line in r.stdout.strip().splitlines()[-5:]:
@@ -441,8 +441,8 @@ def test_M10():
     import yaml
     backup_config()
     try:
-        print("\n[Step 1] Ingest simple.pdf with default chunk_size=1000")
-        ec1, out1 = ingest(FIXTURES / "simple.pdf", "default", force=True)
+        print("\n[Step 1] Ingest sample.pdf with default chunk_size=1000")
+        ec1, out1 = ingest(FIXTURES / "sample.pdf", "default", force=True)
         # Count chunks from output
         chunks_1000 = 0
         for line in out1.splitlines():
@@ -459,8 +459,8 @@ def test_M10():
         with open(CONFIG, "w") as f:
             yaml.dump(cfg, f, default_flow_style=False)
 
-        print("\n[Step 3] Ingest simple.pdf with chunk_size=500")
-        ec2, out2 = ingest(FIXTURES / "simple.pdf", "default", force=True)
+        print("\n[Step 3] Ingest sample.pdf with chunk_size=500")
+        ec2, out2 = ingest(FIXTURES / "sample.pdf", "default", force=True)
         chunks_500 = 0
         for line in out2.splitlines():
             if "Chunks generated:" in line:
@@ -470,7 +470,7 @@ def test_M10():
         print(f"  chunks with chunk_size=500: {chunks_500}")
 
         print("\n" + "=" * 60)
-        # For simple.pdf (408 chars), even chunk_size=500 may produce 1 chunk
+        # For sample.pdf (408 chars), even chunk_size=500 may produce 1 chunk
         # Use chinese_technical_doc.pdf for better comparison if needed
         print(f"VERDICT: chunks_500={chunks_500} >= chunks_1000={chunks_1000}")
         passed = chunks_500 >= chunks_1000  # should be >= (more or equal chunks with smaller size)
@@ -498,7 +498,7 @@ def test_M03():
             yaml.dump(cfg, f, default_flow_style=False)
 
         print("\n[Step 2] Run ingest (will fail at Transform stage)")
-        r = run([str(SCRIPTS / "ingest.py"), "--path", str(FIXTURES / "simple.pdf"), "--force"])
+        r = run([str(SCRIPTS / "ingest.py"), "--path", str(FIXTURES / "sample.pdf"), "--force"])
         print(f"  exit_code={r.returncode}")
         # Check for connection error in output
         combined = r.stdout + r.stderr

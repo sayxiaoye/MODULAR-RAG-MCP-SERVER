@@ -2446,7 +2446,7 @@ dashboard:
   - **降级行为**：图片提取失败不应阻塞文本解析，可在日志中记录警告。
 - **测试方法**：`pytest -q tests/unit/test_loader_pdf_contract.py`。
 - **测试建议**：
-  - 准备两个测试文件：`simple.pdf`（纯文本）和 `with_images.pdf`（包含图片）
+  - 准备两个测试文件：`sample.pdf`（纯文本）和 `with_images.pdf`（包含图片）
   - 验证纯文本PDF能正常解析
   - 验证带图片PDF能提取图片并正确插入占位符
 
@@ -2683,7 +2683,7 @@ dashboard:
     - 包含3张嵌入图片（需测试图片提取和描述）
     - 包含5个表格（测试表格内容解析）
     - 多页多段落（测试完整分块流程）
-  - **辅助测试**：`tests/fixtures/sample_documents/simple.pdf`（简单场景回归）
+  - **辅助测试**：`tests/fixtures/sample_documents/sample.pdf`（简单场景回归）
 - **验收标准**：
   - 对 `complex_technical_doc.pdf` 跑完整 pipeline，成功输出：
     - 向量索引文件到 ChromaDB

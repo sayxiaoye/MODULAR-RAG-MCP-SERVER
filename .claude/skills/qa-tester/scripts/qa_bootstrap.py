@@ -27,7 +27,7 @@ TRACES_FILE = LOGS_DIR / "traces.jsonl"
 
 # Baseline documents
 BASELINE_DEFAULT = [
-    FIXTURES_DIR / "simple.pdf",
+    FIXTURES_DIR / "sample.pdf",
     FIXTURES_DIR / "with_images.pdf",
 ]
 BASELINE_TEST_COL = [
@@ -113,7 +113,7 @@ def setup_baseline() -> None:
     print()
 
     # Step 2: Ingest default collection
-    print("📄 Ingesting default collection (simple.pdf + with_images.pdf)...")
+    print("📄 Ingesting default collection (sample.pdf + with_images.pdf)...")
     for pdf in BASELINE_DEFAULT:
         if not pdf.exists():
             print(f"   ⚠️  File not found: {pdf}")
@@ -165,7 +165,7 @@ def setup_baseline() -> None:
 
     print()
     print("✅ System is now in Baseline state")
-    print("   default: simple.pdf + with_images.pdf")
+    print("   default: sample.pdf + with_images.pdf")
     print("   test_col: complex_technical_doc.pdf")
     print("   traces: ingestion + query traces generated")
 

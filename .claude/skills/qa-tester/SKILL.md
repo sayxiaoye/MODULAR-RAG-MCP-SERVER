@@ -192,9 +192,9 @@ All must be true:
 <method>: <value_1>, <value_2>[, ...]
 ```
 
-- **CLI**: `exit=0, stdout: 'Total chunks: 3', source_file=simple.pdf`
+- **CLI**: `exit=0, stdout: 'Total chunks: 3', source_file=sample.pdf`
 - **AppTest**: `at.metric[0].label='Total traces', at.metric[0].value=6`
-- **Multi-step**: `Step1: exit=0, chunks=3. Step2: sources=[simple.pdf]. Step3: deleted=1. Step4: sources=[]`
+- **Multi-step**: `Step1: exit=0, chunks=3. Step2: sources=[sample.pdf]. Step3: deleted=1. Step4: sources=[]`
 - **Bad** (BANNED): `"Already verified in C-02"`, `"Code uses yaml.safe_load"`, `"Should work because..."`, `"Parameter accepted"`
 
 ### Status Icons
@@ -238,7 +238,7 @@ Re-execute any flagged test. Do NOT proceed until 0 flags.
 
 | File | Language | Pages | Images |
 |------|----------|-------|--------|
-| `simple.pdf` | EN | 1 | 0 |
+| `sample.pdf` | EN | 1 | 0 |
 | `with_images.pdf` | EN | 1 | 1 |
 | `complex_technical_doc.pdf` | EN | ~8 | 3 |
 | `chinese_technical_doc.pdf` | ZH | ~8 | 0 |
