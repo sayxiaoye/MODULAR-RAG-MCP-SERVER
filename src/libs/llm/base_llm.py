@@ -69,7 +69,7 @@ class BaseLLM(ABC):
 
         Args:
             messages: 对话历史，元素为 ChatMessage 或含 role/content 的 dict。
-            trace: 可选追踪上下文（F 阶段 TraceContext 注入，用于打点）。
+            trace: 可选追踪上下文（F 阶段 TraceContext 注入，用于埋点）。
 
         Returns:
             ChatResponse，其中 content 为模型生成文本。

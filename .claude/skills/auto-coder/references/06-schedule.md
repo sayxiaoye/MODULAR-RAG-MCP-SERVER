@@ -19,8 +19,8 @@
   - 目的：在线查询链路跑通，得到 Top-K chunks（含引用信息），并具备稳定回退策略。
 5. **阶段 E：MCP Server 层与 Tools 落地**
    - 目的：按 MCP 标准暴露 tools，让 Copilot/Claude 可直接调用查询能力。
-6. **阶段 F：Trace 基础设施与打点**
-   - 目的：增强 TraceContext，实现结构化日志持久化，在 Ingestion + Query 双链路打点，添加 Pipeline 进度回调。
+6. **阶段 F：Trace 基础设施与埋点**
+   - 目的：增强 TraceContext，实现结构化日志持久化，在 Ingestion + Query 双链路埋点，添加 Pipeline 进度回调。
 7. **阶段 G：可视化管理平台 Dashboard**
    - 目的：搭建 Streamlit 六页面管理平台（系统总览 / 数据浏览 / Ingestion 管理 / Ingestion 追踪 / Query 追踪 / 评估占位），实现 DocumentManager 跨存储协调。
 8. **阶段 H：评估体系**
@@ -111,14 +111,14 @@
 | E5 | get_document_summary Tool | [x] | 2026-08-26 | get_document_summary + Chroma/ingestion 回退查询，4个单元测试 |
 | E6 | 多模态返回组装（Text + Image） | [x] | 2026-08-27 | MultimodalAssembler + ImageContent base64，1个集成测试 |
 
-#### 阶段 F：Trace 基础设施与打点
+#### 阶段 F：Trace 基础设施与埋点
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | F1 | TraceContext 增强（finish + 耗时统计 + trace_type） | [x] | 2026-08-27 | TraceContext finish/to_dict/elapsed_ms + TraceCollector，6个单元测试 |
 | F2 | 结构化日志 logger（JSON Lines） | [x] | 2026-08-27 | JSONFormatter + write_trace 写入 traces.jsonl，3个单元测试 |
-| F3 | 在 Query 链路打点 | [x] | 2026-08-27 | HybridSearch/Reranker 规范阶段名 + elapsed_ms/method，1个集成测试 |
-| F4 | 在 Ingestion 链路打点 | [x] | 2026-08-27 | Pipeline load/split/transform/embed/upsert + elapsed_ms/method，1个集成测试 |
+| F3 | 在 Query 链路埋点 | [x] | 2026-08-27 | HybridSearch/Reranker 规范阶段名 + elapsed_ms/method，1个集成测试 |
+| F4 | 在 Ingestion 链路埋点 | [x] | 2026-08-27 | Pipeline load/split/transform/embed/upsert + elapsed_ms/method，1个集成测试 |
 | F5 | Pipeline 进度回调 (on_progress) | [x] | 2026-08-27 | on_progress(stage, current, total) 规范阶段名，3个单元测试 |
 
 #### 阶段 G：可视化管理平台 Dashboard
@@ -986,7 +986,7 @@
 
 ---
 
-## 阶段 F：Trace 基础设施与打点（目标：Ingestion + Query 双链路可追踪）
+## 阶段 F：Trace 基础设施与埋点（目标：Ingestion + Query 双链路可追踪）
 
 ### F1：TraceContext 增强（finish + 耗时统计 + trace_type） ✅
 - **目标**：增强已有的 `TraceContext`（C5 已实现基础版），添加 `finish()` 方法、耗时统计、`trace_type` 字段（区分 query/ingestion）、`to_dict()` 序列化功能。
@@ -1022,7 +1022,7 @@
 - **验收标准**：写入一条 trace 后文件新增一行合法 JSON，包含 `trace_type` 字段。
 - **测试方法**：`pytest -q tests/unit/test_jsonl_logger.py`。
 
-### F3：在 Query 链路打点 ✅
+### F3：在 Query 链路埋点 ✅
 - **目标**：在 HybridSearch/Rerank 中注入 TraceContext（`trace_type="query"`），利用 B 阶段抽象接口中预留的 `trace` 参数，显式调用 `trace.record_stage()` 记录各阶段数据。
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）、F1（TraceContext 增强）、F2（结构化日志）
 - **修改文件**：
@@ -1036,7 +1036,7 @@
   - `trace.to_dict()` 中 `trace_type == "query"`
 - **测试方法**：`pytest -q tests/integration/test_hybrid_search.py`。
 
-### F4：在 Ingestion 链路打点 ✅
+### F4：在 Ingestion 链路埋点 ✅
 - **目标**：在 IngestionPipeline 中注入 TraceContext（`trace_type="ingestion"`），记录各摄取阶段的处理数据。
 - **前置依赖**：C5（Pipeline）、F1（TraceContext 增强）、F2（结构化日志）
 - **修改文件**：
@@ -1050,7 +1050,7 @@
 
 ### F5：Pipeline 进度回调 (on_progress) ✅
 - **目标**：在 `IngestionPipeline.run()` 方法中新增可选 `on_progress` 回调参数，支持外部实时获取处理进度。
-- **前置依赖**：F4（Ingestion 打点）
+- **前置依赖**：F4（Ingestion 埋点）
 - **修改文件**：
   - `src/ingestion/pipeline.py`（在各阶段调用 `on_progress(stage_name, current, total)`）
   - `tests/unit/test_pipeline_progress.py`（新增：验证回调被正确调用）
@@ -1128,7 +1128,7 @@
 
 ### G5：Ingestion 追踪页面
 - **目标**：实现 Dashboard Ingestion 追踪页面（摄取历史列表、阶段耗时瀑布图）。
-- **前置依赖**：F4（Ingestion 打点）、G1（Dashboard 架构）
+- **前置依赖**：F4（Ingestion 埋点）、G1（Dashboard 架构）
 - **修改文件**：
   - `src/observability/dashboard/pages/ingestion_traces.py`（新增）
   - `src/observability/dashboard/services/trace_service.py`（新增：解析 traces.jsonl）
@@ -1141,7 +1141,7 @@
 
 ### G6：Query 追踪页面
 - **目标**：实现 Dashboard Query 追踪页面（查询历史、Dense/Sparse 对比、Rerank 变化）。
-- **前置依赖**：F3（Query 打点）、G1（Dashboard 架构）、G5（TraceService 已实现）
+- **前置依赖**：F3（Query 埋点）、G1（Dashboard 架构）、G5（TraceService 已实现）
 - **修改文件**：
   - `src/observability/dashboard/pages/query_traces.py`（新增）
 - **实现要点**：

@@ -62,7 +62,7 @@ class IngestionPipeline:
     摄取主流程编排器：将 C2~C13 各模块串成可观测的 MVP 链路。
 
     默认顺序：integrity → load → split → transform → encode → store。
-    F4 将摄取链路打点为 ``load`` / ``split`` / ``transform`` / ``embed`` / ``upsert``。
+    F4 将摄取链路埋点为 ``load`` / ``split`` / ``transform`` / ``embed`` / ``upsert``。
     F5 进度回调使用同一组规范阶段名（外加 integrity）。
     """
 

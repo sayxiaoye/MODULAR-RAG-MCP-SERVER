@@ -1,4 +1,4 @@
-"""Trace 上下文：query / ingestion 链路的阶段打点与耗时统计。"""
+"""Trace 上下文：query / ingestion 链路的阶段埋点与耗时统计。"""
 
 from __future__ import annotations
 
