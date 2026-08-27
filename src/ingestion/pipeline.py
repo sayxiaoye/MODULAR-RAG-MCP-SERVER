@@ -1,4 +1,8 @@
-"""Ingestion Pipeline：串行编排 integrity→load→split→transform→encode→store。"""
+"""Ingestion Pipeline：串行编排 integrity→load→split→transform→encode→store。
+
+F4 在编排层写入规范阶段名 load / split / transform / embed / upsert，
+每段包含 elapsed_ms、method 与处理详情。
+"""
 
 from __future__ import annotations
 
@@ -58,6 +62,7 @@ class IngestionPipeline:
     摄取主流程编排器：将 C2~C13 各模块串成可观测的 MVP 链路。
 
     默认顺序：integrity → load → split → transform → encode → store。
+    F4 将摄取链路打点为 ``load`` / ``split`` / ``transform`` / ``embed`` / ``upsert``。
     """
 
     def __init__(
@@ -172,7 +177,13 @@ class IngestionPipeline:
                 resolved_source,
                 chunk_count=len(chunks),
             )
-            active_trace.record_stage("pipeline_complete", chunk_count=len(chunks))
+            active_trace.record_stage(
+                "pipeline_complete",
+                elapsed_ms=0.0,
+                method="pipeline",
+                chunk_count=len(chunks),
+            )
+            active_trace.finish()
 
             logger.info(
                 "摄取完成: path=%s collection=%s chunks=%d images=%d",
@@ -233,9 +244,11 @@ class IngestionPipeline:
         except Exception as exc:
             raise IngestionPipelineError("load", str(exc)) from exc
 
+        # F4：load 阶段 method 对齐实际解析器（PDF 走 MarkItDown）
         trace.record_stage(
             "load",
             elapsed_ms=(time.perf_counter() - start) * 1000,
+            method=self._resolve_load_method(loader),
             source_path=source_path,
             doc_id=document.id,
         )
@@ -259,9 +272,13 @@ class IngestionPipeline:
         except Exception as exc:
             raise IngestionPipelineError("split", str(exc)) from exc
 
+        splitter_name = (
+            settings.ingestion.splitter if settings.ingestion is not None else "recursive"
+        )
         trace.record_stage(
             "split",
             elapsed_ms=(time.perf_counter() - start) * 1000,
+            method=splitter_name,
             chunk_count=len(chunks),
         )
         logger.info("阶段 split 完成: chunks=%d", len(chunks))
@@ -275,24 +292,29 @@ class IngestionPipeline:
         on_progress: ProgressCallback | None,
         trace: TraceContext,
     ) -> list[Chunk]:
-        """依次执行 Transform 链。"""
+        """依次执行 Transform 链，整条链记为规范阶段 ``transform``。"""
         transforms = self._transforms or self._default_transforms(settings)
-        total = len(transforms)
+        total = len(transforms) or 1
         current_chunks = chunks
+        chain_start = time.perf_counter()
+        transform_names: list[str] = []
         for index, transform in enumerate(transforms):
             self._notify_progress(on_progress, "transform", index + 1, total)
             stage_name = transform.__class__.__name__
-            start = time.perf_counter()
+            transform_names.append(stage_name)
             try:
                 current_chunks = transform.transform(current_chunks, trace=trace)
             except Exception as exc:
                 raise IngestionPipelineError(stage_name, str(exc)) from exc
-            trace.record_stage(
-                stage_name,
-                elapsed_ms=(time.perf_counter() - start) * 1000,
-                chunk_count=len(current_chunks),
-            )
             logger.info("阶段 %s 完成: chunks=%d", stage_name, len(current_chunks))
+
+        trace.record_stage(
+            "transform",
+            elapsed_ms=(time.perf_counter() - chain_start) * 1000,
+            method="sequential",
+            transforms=transform_names,
+            chunk_count=len(current_chunks),
+        )
         return current_chunks
 
     def _run_encode(
@@ -313,9 +335,12 @@ class IngestionPipeline:
 
         batch_count = result.batch_count or 1
         self._notify_progress(on_progress, "encode", batch_count, batch_count)
+        # F4 规范阶段名为 embed；on_progress 仍用 encode，留给 F5 / 现有回调契约
         trace.record_stage(
-            "encode",
+            "embed",
             elapsed_ms=(time.perf_counter() - start) * 1000,
+            method=settings.embedding.provider,
+            provider=settings.embedding.provider,
             batch_count=result.batch_count,
             chunk_count=len(chunks),
         )
@@ -354,9 +379,12 @@ class IngestionPipeline:
         except Exception as exc:
             raise IngestionPipelineError("store", str(exc)) from exc
 
+        # F4 规范阶段名为 upsert；on_progress 仍用 store
         trace.record_stage(
-            "store",
+            "upsert",
             elapsed_ms=(time.perf_counter() - start) * 1000,
+            method=settings.vector_store.provider,
+            provider=settings.vector_store.provider,
             vector_count=len(chunk_ids),
         )
         logger.info("阶段 store 完成: vectors=%d", len(chunk_ids))
@@ -416,6 +444,13 @@ class IngestionPipeline:
             ingestion=self._base_settings.ingestion,
             vision_llm=self._base_settings.vision_llm,
         )
+
+    @staticmethod
+    def _resolve_load_method(loader: BaseLoader) -> str:
+        """推断 load 阶段 method：PDF 默认 MarkItDown，其它用类名。"""
+        if isinstance(loader, PdfLoader):
+            return "markitdown"
+        return loader.__class__.__name__
 
     def _resolve_loader(self, source_path: str, settings: Settings) -> BaseLoader:
         """按扩展名选择 Loader（MVP 仅 PDF）。"""

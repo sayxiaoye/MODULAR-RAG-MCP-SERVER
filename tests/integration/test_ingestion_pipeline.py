@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from core.settings import Settings, VectorStoreSettings, load_settings
+from core.trace.trace_context import TraceContext
 from ingestion.embedding.batch_processor import BatchProcessor
 from ingestion.embedding.dense_encoder import DenseEncoder
 from ingestion.pipeline import IngestionPipeline, IngestionPipelineError
@@ -217,6 +218,38 @@ class TestIngestionPipeline:
         assert "transform" in stages
         assert "encode" in stages
         assert "store" in stages
+
+    def test_ingestion_trace_records_canonical_stages(self, pipeline_bundle: dict) -> None:
+        """F4：一次摄取应包含 load/split/transform/embed/upsert，且带 elapsed_ms 与 method。"""
+        trace = TraceContext(trace_type="ingestion")
+        pipeline = pipeline_bundle["pipeline"]
+        settings = pipeline_bundle["settings"]
+
+        pipeline.run(
+            pipeline_bundle["pdf_path"],
+            collection=pipeline_bundle["collection"],
+            force=True,
+            trace=trace,
+        )
+
+        payload = trace.to_dict()
+        assert payload["trace_type"] == "ingestion"
+        assert trace.is_finished is True
+
+        by_name = {stage["name"]: stage for stage in payload["stages"]}
+        expected = {
+            "load": "markitdown",
+            "split": settings.ingestion.splitter,
+            "transform": "sequential",
+            "embed": settings.embedding.provider,
+            "upsert": settings.vector_store.provider,
+        }
+        for name, method in expected.items():
+            stage = by_name[name]
+            assert "elapsed_ms" in stage
+            assert isinstance(stage["elapsed_ms"], (int, float))
+            assert stage["elapsed_ms"] >= 0
+            assert stage["method"] == method
 
     def test_load_failure_raises_clear_pipeline_error(self, tmp_path: Path) -> None:
         """Loader 失败应抛出带阶段名的 IngestionPipelineError。"""

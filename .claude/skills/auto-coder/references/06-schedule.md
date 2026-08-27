@@ -118,7 +118,7 @@
 | F1 | TraceContext 增强（finish + 耗时统计 + trace_type） | [x] | 2026-08-27 | TraceContext finish/to_dict/elapsed_ms + TraceCollector，6个单元测试 |
 | F2 | 结构化日志 logger（JSON Lines） | [x] | 2026-08-27 | JSONFormatter + write_trace 写入 traces.jsonl，3个单元测试 |
 | F3 | 在 Query 链路打点 | [x] | 2026-08-27 | HybridSearch/Reranker 规范阶段名 + elapsed_ms/method，1个集成测试 |
-| F4 | 在 Ingestion 链路打点 | [ ] | | |
+| F4 | 在 Ingestion 链路打点 | [x] | 2026-08-27 | Pipeline load/split/transform/embed/upsert + elapsed_ms/method，1个集成测试 |
 | F5 | Pipeline 进度回调 (on_progress) | [ ] | | |
 
 #### 阶段 G：可视化管理平台 Dashboard
@@ -163,11 +163,11 @@
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
-| 阶段 F | 5 | 3 | 60% |
+| 阶段 F | 5 | 4 | 80% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **52** | **74%** |
+| **总计** | **70** | **53** | **76%** |
 
 
 ---
@@ -1022,7 +1022,7 @@
 - **验收标准**：写入一条 trace 后文件新增一行合法 JSON，包含 `trace_type` 字段。
 - **测试方法**：`pytest -q tests/unit/test_jsonl_logger.py`。
 
-### F3：在 Query 链路打点
+### F3：在 Query 链路打点 ✅
 - **目标**：在 HybridSearch/Rerank 中注入 TraceContext（`trace_type="query"`），利用 B 阶段抽象接口中预留的 `trace` 参数，显式调用 `trace.record_stage()` 记录各阶段数据。
 - **前置依赖**：D5（HybridSearch）、D6（Reranker）、F1（TraceContext 增强）、F2（结构化日志）
 - **修改文件**：
@@ -1036,7 +1036,7 @@
   - `trace.to_dict()` 中 `trace_type == "query"`
 - **测试方法**：`pytest -q tests/integration/test_hybrid_search.py`。
 
-### F4：在 Ingestion 链路打点
+### F4：在 Ingestion 链路打点 ✅
 - **目标**：在 IngestionPipeline 中注入 TraceContext（`trace_type="ingestion"`），记录各摄取阶段的处理数据。
 - **前置依赖**：C5（Pipeline）、F1（TraceContext 增强）、F2（结构化日志）
 - **修改文件**：
