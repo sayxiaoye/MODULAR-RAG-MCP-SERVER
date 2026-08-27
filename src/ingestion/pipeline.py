@@ -1,7 +1,7 @@
 """Ingestion Pipeline：串行编排 integrity→load→split→transform→encode→store。
 
-F4 在编排层写入规范阶段名 load / split / transform / embed / upsert，
-每段包含 elapsed_ms、method 与处理详情。
+F4 在编排层写入规范阶段名 load / split / transform / embed / upsert。
+F5 通过可选 on_progress(stage, current, total) 向外报告同一组阶段进度。
 """
 
 from __future__ import annotations
@@ -63,6 +63,7 @@ class IngestionPipeline:
 
     默认顺序：integrity → load → split → transform → encode → store。
     F4 将摄取链路打点为 ``load`` / ``split`` / ``transform`` / ``embed`` / ``upsert``。
+    F5 进度回调使用同一组规范阶段名（外加 integrity）。
     """
 
     def __init__(
@@ -334,8 +335,8 @@ class IngestionPipeline:
             raise IngestionPipelineError("encode", str(exc)) from exc
 
         batch_count = result.batch_count or 1
-        self._notify_progress(on_progress, "encode", batch_count, batch_count)
-        # F4 规范阶段名为 embed；on_progress 仍用 encode，留给 F5 / 现有回调契约
+        # F5：编码完成时报告 embed 进度；current/total 对齐实际 batch 数
+        self._notify_progress(on_progress, "embed", batch_count, batch_count)
         trace.record_stage(
             "embed",
             elapsed_ms=(time.perf_counter() - start) * 1000,
@@ -362,11 +363,14 @@ class IngestionPipeline:
         trace: TraceContext,
     ) -> list[str]:
         """写入向量库与 BM25 索引。"""
-        self._notify_progress(on_progress, "store", 1, 1)
+        self._notify_progress(on_progress, "upsert", 1, 1)
         start = time.perf_counter()
 
-        vector_store = self._vector_store or VectorStoreFactory.create(settings)
-        upserter = self._vector_upserter or VectorUpserter(vector_store)
+        # 已注入 upserter 时不再创建 VectorStore，便于单元测试隔离
+        upserter = self._vector_upserter
+        if upserter is None:
+            vector_store = self._vector_store or VectorStoreFactory.create(settings)
+            upserter = VectorUpserter(vector_store)
         bm25 = self._bm25_indexer or BM25Indexer(
             collection=settings.vector_store.collection_name,
             index_root=self._bm25_root,
@@ -379,7 +383,7 @@ class IngestionPipeline:
         except Exception as exc:
             raise IngestionPipelineError("store", str(exc)) from exc
 
-        # F4 规范阶段名为 upsert；on_progress 仍用 store
+        # F4 规范阶段名为 upsert
         trace.record_stage(
             "upsert",
             elapsed_ms=(time.perf_counter() - start) * 1000,
@@ -511,5 +515,14 @@ class IngestionPipeline:
         current: int,
         total: int,
     ) -> None:
+        """
+        触发进度回调；未传入时静默跳过。
+
+        Args:
+            callback: F5 进度回调，签名 ``(stage_name, current, total)``。
+            stage: 规范阶段名。
+            current: 当前进度（从 1 计）。
+            total: 该阶段总量。
+        """
         if callback is not None:
             callback(stage, current, total)

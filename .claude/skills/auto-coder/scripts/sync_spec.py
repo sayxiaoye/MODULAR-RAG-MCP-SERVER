@@ -128,8 +128,9 @@ def sync(force: bool = False):
     original = dev_spec.read_text(encoding='utf-8')
     content = recount_overall_progress(original)
     if content != original:
-        # Write derived rollup back to the source of truth before hashing.
-        dev_spec.write_text(content, encoding='utf-8')
+        # 显式 newline 避免 Windows 下写回被编辑器/CRLF 归一化吞掉派生表
+        dev_spec.write_text(content, encoding='utf-8', newline='\n')
+        print(f"wrote overall progress to {dev_spec}")
 
     # Hash check
     current_hash = hashlib.sha256(dev_spec.read_bytes()).hexdigest()

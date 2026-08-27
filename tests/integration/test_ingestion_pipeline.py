@@ -216,8 +216,8 @@ class TestIngestionPipeline:
         assert "load" in stages
         assert "split" in stages
         assert "transform" in stages
-        assert "encode" in stages
-        assert "store" in stages
+        assert "embed" in stages
+        assert "upsert" in stages
 
     def test_ingestion_trace_records_canonical_stages(self, pipeline_bundle: dict) -> None:
         """F4：一次摄取应包含 load/split/transform/embed/upsert，且带 elapsed_ms 与 method。"""

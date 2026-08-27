@@ -119,7 +119,7 @@
 | F2 | 结构化日志 logger（JSON Lines） | [x] | 2026-08-27 | JSONFormatter + write_trace 写入 traces.jsonl，3个单元测试 |
 | F3 | 在 Query 链路打点 | [x] | 2026-08-27 | HybridSearch/Reranker 规范阶段名 + elapsed_ms/method，1个集成测试 |
 | F4 | 在 Ingestion 链路打点 | [x] | 2026-08-27 | Pipeline load/split/transform/embed/upsert + elapsed_ms/method，1个集成测试 |
-| F5 | Pipeline 进度回调 (on_progress) | [ ] | | |
+| F5 | Pipeline 进度回调 (on_progress) | [x] | 2026-08-27 | on_progress(stage, current, total) 规范阶段名，3个单元测试 |
 
 #### 阶段 G：可视化管理平台 Dashboard
 
@@ -163,11 +163,11 @@
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
-| 阶段 F | 5 | 4 | 80% |
+| 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 0 | 0% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **53** | **76%** |
+| **总计** | **70** | **54** | **77%** |
 
 
 ---
@@ -1048,7 +1048,7 @@
   - `trace.to_dict()` 中 `trace_type == "ingestion"`
 - **测试方法**：`pytest -q tests/integration/test_ingestion_pipeline.py`。
 
-### F5：Pipeline 进度回调 (on_progress)
+### F5：Pipeline 进度回调 (on_progress) ✅
 - **目标**：在 `IngestionPipeline.run()` 方法中新增可选 `on_progress` 回调参数，支持外部实时获取处理进度。
 - **前置依赖**：F4（Ingestion 打点）
 - **修改文件**：
