@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from mcp_server.protocol_handler import (
     SUPPORTED_PROTOCOL_VERSION,
 )
 from mcp_server.tools.query_knowledge_hub import TOOL_NAME, build_query_knowledge_hub_tool
+from core.response.multimodal_assembler import MultimodalAssembler
 from core.types import RetrievalResult
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -222,3 +224,81 @@ class TestQueryKnowledgeHubTool:
         assert result["content"][0]["text"]
         assert "未找到相关文档" in result["content"][0]["text"]
         assert result["structuredContent"]["citations"] == []
+
+
+# 1x1 PNG，用于验证 ImageContent 的 mimeType 与 base64 data
+_MIN_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f"
+    b"\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+@pytest.mark.integration
+class TestQueryKnowledgeHubImage:
+    """验证 E6：命中 chunk 含 image_refs 时返回 ImageContent。"""
+
+    def test_tools_call_returns_image_content(self, tmp_path: Path) -> None:
+        """content 应包含 type=image，mimeType 正确且 data 为 base64。"""
+        image_path = tmp_path / "diagram.png"
+        image_path.write_bytes(_MIN_PNG)
+
+        fake_result = type(
+            "PipelineResult",
+            (),
+            {
+                "final_results": [
+                    RetrievalResult(
+                        chunk_id="chunk-img",
+                        score=0.91,
+                        text="系统架构示意图 [IMAGE: img_page1_0]",
+                        metadata={
+                            "source_path": "docs/architecture.pdf",
+                            "page": 5,
+                            "image_refs": ["img_page1_0"],
+                            "images": [
+                                {
+                                    "id": "img_page1_0",
+                                    "path": str(image_path),
+                                    "text_offset": 0,
+                                    "text_length": 20,
+                                }
+                            ],
+                        },
+                    )
+                ]
+            },
+        )()
+
+        def _fake_pipeline(*_args, **_kwargs):
+            return fake_result
+
+        handler_tool = build_query_knowledge_hub_tool(
+            pipeline_runner=_fake_pipeline,
+            assembler=MultimodalAssembler(),
+        )
+        server = MCPServer(protocol_handler=ProtocolHandler(tools=[handler_tool]))
+        response = server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 12,
+                "method": "tools/call",
+                "params": {
+                    "name": TOOL_NAME,
+                    "arguments": {"query": "系统架构"},
+                },
+            }
+        )
+
+        assert response is not None
+        result = response["result"]
+        content = result["content"]
+        assert content[0]["type"] == "text"
+        images = [item for item in content if item.get("type") == "image"]
+        assert len(images) == 1
+        assert images[0]["mimeType"] == "image/png"
+        assert images[0]["data"] == base64.b64encode(_MIN_PNG).decode("ascii")
+        # data 必须是可解码的 base64 字符串
+        decoded = base64.b64decode(images[0]["data"])
+        assert decoded == _MIN_PNG
+        assert decoded.startswith(b"\x89PNG")

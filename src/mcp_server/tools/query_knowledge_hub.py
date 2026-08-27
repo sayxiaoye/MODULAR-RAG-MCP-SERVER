@@ -9,6 +9,7 @@ from core.query_engine.query_pipeline import (
     execute_query_pipeline,
     settings_for_query,
 )
+from core.response.multimodal_assembler import MultimodalAssembler
 from core.response.response_builder import ResponseBuilder
 from core.settings import Settings, SettingsError, load_settings
 from core.trace.trace_context import TraceContext
@@ -48,6 +49,7 @@ def query_knowledge_hub(
     *,
     settings: Settings | None = None,
     pipeline_runner: PipelineRunner | None = None,
+    assembler: MultimodalAssembler | None = None,
 ) -> dict[str, Any]:
     """
     MCP Tool 入口：执行检索并构建带 citations 的响应。
@@ -56,6 +58,7 @@ def query_knowledge_hub(
         arguments: tools/call 传入的参数字典。
         settings: 可选配置注入，测试时可覆盖。
         pipeline_runner: 可选流水线函数注入，默认 execute_query_pipeline。
+        assembler: 可选多模态组装器，测试时可注入临时图片目录。
     """
     query = arguments.get("query")
     if not isinstance(query, str) or not query.strip():
@@ -103,13 +106,18 @@ def query_knowledge_hub(
         len(pipeline_result.final_results),
         resolved_settings.vector_store.collection_name,
     )
-    return ResponseBuilder.build(pipeline_result.final_results, query.strip()).to_tool_result()
+    return ResponseBuilder.build(
+        pipeline_result.final_results,
+        query.strip(),
+        assembler=assembler,
+    ).to_tool_result()
 
 
 def build_query_knowledge_hub_tool(
     *,
     settings: Settings | None = None,
     pipeline_runner: PipelineRunner | None = None,
+    assembler: MultimodalAssembler | None = None,
 ) -> ToolDefinition:
     """构造可注册到 ProtocolHandler 的 ToolDefinition。"""
 
@@ -118,6 +126,7 @@ def build_query_knowledge_hub_tool(
             arguments,
             settings=settings,
             pipeline_runner=pipeline_runner,
+            assembler=assembler,
         )
 
     return ToolDefinition(

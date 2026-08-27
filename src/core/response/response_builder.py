@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 from core.response.citation_generator import Citation, CitationGenerator
+from core.response.multimodal_assembler import MultimodalAssembler
 from core.types import RetrievalResult
 
 _EMPTY_HINT = "未找到相关文档，请先运行 ingest.py 摄取数据。"
@@ -32,21 +33,33 @@ class ResponseBuilder:
     """将检索结果组装为带引用标注的 MCP 响应。"""
 
     @classmethod
-    def build(cls, retrieval_results: Sequence[RetrievalResult], query: str) -> MCPResponse:
+    def build(
+        cls,
+        retrieval_results: Sequence[RetrievalResult],
+        query: str,
+        assembler: MultimodalAssembler | None = None,
+    ) -> MCPResponse:
         """
         构建 MCP 响应。
 
         Args:
             retrieval_results: 最终 Top-K 检索结果（已融合/重排）。
             query: 用户原始查询，用于 structuredContent.answer 上下文。
+            assembler: 可选多模态组装器；默认使用 MultimodalAssembler。
         """
         if not retrieval_results:
             return cls._build_empty_response(query)
 
         citations = CitationGenerator.generate(retrieval_results)
         markdown = cls._build_markdown(query, citations)
+        # 文本始终放在 content[0]，图片作为后续项供支持多模态的 Client 渲染
+        content: list[dict[str, Any]] = [{"type": "text", "text": markdown}]
+        image_contents = (assembler or MultimodalAssembler()).assemble_image_contents(
+            retrieval_results
+        )
+        content.extend(image_contents)
         return MCPResponse(
-            content=[{"type": "text", "text": markdown}],
+            content=content,
             structured_content={
                 "query": query,
                 "answer": markdown,
