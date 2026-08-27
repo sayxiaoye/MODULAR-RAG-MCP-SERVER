@@ -160,7 +160,8 @@ class TestMetadataEnricherLLMMode:
         )
         trace = TraceContext(trace_type="ingestion")
         result = enricher.transform([_chunk("integration body")], trace=trace)[0]
-        summary = trace.finish()
+        trace.finish()
+        summary = trace.to_dict()
 
         assert result.metadata["enriched_by"] == "llm"
         assert any(stage["name"] == "metadata_enricher_llm" for stage in summary["stages"])

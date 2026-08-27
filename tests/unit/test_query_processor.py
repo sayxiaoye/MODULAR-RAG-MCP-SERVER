@@ -82,7 +82,8 @@ class TestQueryProcessor:
         trace = TraceContext(trace_type="query")
         processor.process("Azure BM25", trace=trace)
 
-        stage_names = [stage["name"] for stage in trace.finish()["stages"]]
+        trace.finish()
+        stage_names = [stage["name"] for stage in trace.to_dict()["stages"]]
         assert "query_processor" in stage_names
 
     def test_processed_query_serializable(self) -> None:

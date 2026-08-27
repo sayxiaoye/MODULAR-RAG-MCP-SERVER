@@ -130,7 +130,8 @@ class TestRerankerFallback:
         trace = TraceContext(trace_type="query")
 
         reranker.rerank("query", [_candidate("a")], top_k=1, trace=trace)
-        payload = trace.finish()
+        trace.finish()
+        payload = trace.to_dict()
         rerank_stage = next(stage for stage in payload["stages"] if stage["name"] == "reranker")
 
         assert rerank_stage["fallback"] is True

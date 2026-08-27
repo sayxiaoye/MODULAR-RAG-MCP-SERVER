@@ -169,7 +169,8 @@ class TestDenseRetriever:
         )
         retriever.retrieve("Azure", top_k=1, trace=trace)
 
-        stages = [stage["name"] for stage in trace.finish()["stages"]]
+        trace.finish()
+        stages = [stage["name"] for stage in trace.to_dict()["stages"]]
         assert "dense_retriever" in stages
 
     def test_from_dict_accepts_id_alias(self) -> None:

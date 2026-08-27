@@ -239,7 +239,8 @@ class TestSparseRetriever:
         retriever = SparseRetriever(settings, bm25_indexer=bm25, vector_store=vector_store)
         retriever.retrieve(["azure"], top_k=1, trace=trace)
 
-        stages = [stage["name"] for stage in trace.finish()["stages"]]
+        trace.finish()
+        stages = [stage["name"] for stage in trace.to_dict()["stages"]]
         assert "sparse_retriever" in stages
 
     def test_from_dict_accepts_id_alias(self) -> None:

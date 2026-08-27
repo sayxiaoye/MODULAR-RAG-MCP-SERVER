@@ -214,7 +214,8 @@ class TestChunkRefinerTransform:
             llm=FakeLLM("ok"),
         )
         refiner.transform([_chunk("Page 1\n内容")], trace=trace)
-        summary = trace.finish()
+        trace.finish()
+        summary = trace.to_dict()
         stage_names = [stage["name"] for stage in summary["stages"]]
         assert "chunk_refiner_rule" in stage_names
         assert "chunk_refiner_llm" in stage_names

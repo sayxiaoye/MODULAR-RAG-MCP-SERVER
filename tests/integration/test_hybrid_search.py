@@ -185,7 +185,8 @@ class TestHybridSearch:
         trace = TraceContext(trace_type="query")
         engine.search("Azure 配置", top_k=1, trace=trace)
 
-        stages = [stage["name"] for stage in trace.finish()["stages"]]
+        trace.finish()
+        stages = [stage["name"] for stage in trace.to_dict()["stages"]]
         assert "query_processor" in stages
         assert "fusion" in stages
         assert "hybrid_search" in stages

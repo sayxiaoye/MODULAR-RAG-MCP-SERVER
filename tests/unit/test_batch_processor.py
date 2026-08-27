@@ -114,7 +114,8 @@ class TestBatchProcessor:
         dense = DenseEncoder(settings, embedding=counting)
         processor = BatchProcessor(settings, dense_encoder=dense, batch_size=2)
         processor.process([_chunk(i) for i in range(3)], trace=trace)
-        summary = trace.finish()
+        trace.finish()
+        summary = trace.to_dict()
         batch_stages = [s for s in summary["stages"] if s["name"] == "embedding_batch"]
         assert len(batch_stages) == 2
 

@@ -104,7 +104,8 @@ class TestRRFFusion:
         trace = TraceContext(trace_type="query")
         fusion.fuse([[_result("a")]], top_k=1, trace=trace)
 
-        stages = [stage["name"] for stage in trace.finish()["stages"]]
+        trace.finish()
+        stages = [stage["name"] for stage in trace.to_dict()["stages"]]
         assert "fusion" in stages
 
     def test_invalid_top_k_raises(self) -> None:
