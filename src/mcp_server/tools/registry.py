@@ -6,16 +6,18 @@ from typing import Sequence
 
 from core.settings import Settings, load_settings
 from mcp_server.protocol_handler import ProtocolHandler, ToolDefinition
+from mcp_server.tools.get_document_summary import build_get_document_summary_tool
 from mcp_server.tools.list_collections import build_list_collections_tool
 from mcp_server.tools.query_knowledge_hub import build_query_knowledge_hub_tool
 
 
 def build_default_tools(settings: Settings | None = None) -> list[ToolDefinition]:
-    """构建默认 Tool 列表（query_knowledge_hub + list_collections）。"""
+    """构建默认 Tool 列表（query / list_collections / get_document_summary）。"""
     resolved = settings or load_settings()
     return [
         build_query_knowledge_hub_tool(settings=resolved),
         build_list_collections_tool(settings=resolved),
+        build_get_document_summary_tool(settings=resolved),
     ]
 
 

@@ -2026,7 +2026,7 @@ dashboard:
 | E2 | Protocol Handler 协议解析与能力协商 | [x] | 2026-08-25 | ProtocolHandler + initialize/tools/list/tools/call，10个单元测试 |
 | E3 | query_knowledge_hub Tool | [x] | 2026-08-25 | query_knowledge_hub + ResponseBuilder/CitationGenerator，5个测试 |
 | E4 | list_collections Tool | [x] | 2026-08-26 | list_collections + discover_collections，4个单元测试 |
-| E5 | get_document_summary Tool | [ ] | | |
+| E5 | get_document_summary Tool | [x] | 2026-08-26 | get_document_summary + Chroma/ingestion 回退查询，4个单元测试 |
 | E6 | 多模态返回组装（Text + Image） | [ ] | | |
 
 #### 阶段 F：Trace 基础设施与打点
@@ -2886,7 +2886,7 @@ dashboard:
 - **验收标准**：对 fixtures 中的目录结构能返回集合名列表。
 - **测试方法**：`pytest -q tests/unit/test_list_collections.py`。
 
-### E5：实现 tool：get_document_summary
+### E5：实现 tool：get_document_summary ✅
 - **目标**：实现 `tools/get_document_summary.py`：按 doc_id 返回 title/summary/tags（可先从 metadata/缓存取）。
 - **修改文件**：
   - `src/mcp_server/tools/get_document_summary.py`
