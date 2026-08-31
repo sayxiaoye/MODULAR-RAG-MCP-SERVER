@@ -20,6 +20,9 @@ dependencies = [
 dev = [
     "pytest>=7.0",
 ]
+dashboard = [
+    "streamlit>=1.36",
+]
 rerank = [
     "sentence-transformers>=3.0",
 ]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 import chromadb
@@ -32,6 +33,15 @@ def _build_where_clause(filters: Mapping[str, Any] | None) -> dict[str, Any] | N
     return {
         "$and": [{str(key): value} for key, value in filters.items()],
     }
+
+
+@dataclass(frozen=True)
+class CollectionStats:
+    """单个 Chroma 集合的资产统计，供 G1 总览页展示。"""
+
+    collection: str
+    chunk_count: int
+    document_count: int
 
 
 class ChromaStore(BaseVectorStore):
@@ -139,3 +149,52 @@ class ChromaStore(BaseVectorStore):
                 }
             )
         return self._validate_get_by_ids_results(results)
+
+    def get_collection_stats(self, collection: str | None = None) -> CollectionStats:
+        """
+        汇总集合内 chunk 数与去重文档数，供 Dashboard 总览页展示。
+
+        Args:
+            collection: 集合名；默认使用当前 ``settings.collection_name``。
+        """
+        name = (collection or self.settings.collection_name).strip()
+        if not name:
+            raise VectorStoreError("collection 不能为空")
+        try:
+            target = (
+                self._collection
+                if name == self._collection.name
+                else self._client.get_collection(name)
+            )
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] 读取集合失败: {exc}") from exc
+
+        try:
+            chunk_count = int(target.count())
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] count 失败: {exc}") from exc
+
+        if chunk_count <= 0:
+            return CollectionStats(
+                collection=name,
+                chunk_count=0,
+                document_count=0,
+            )
+
+        try:
+            raw = target.get(include=["metadatas"])
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] 读取 metadata 失败: {exc}") from exc
+
+        sources: set[str] = set()
+        for metadata in raw.get("metadatas") or []:
+            if not isinstance(metadata, Mapping):
+                continue
+            source = metadata.get("source_path")
+            if isinstance(source, str) and source.strip():
+                sources.add(source.strip())
+        return CollectionStats(
+            collection=name,
+            chunk_count=chunk_count,
+            document_count=len(sources),
+        )
