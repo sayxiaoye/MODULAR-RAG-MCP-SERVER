@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,9 @@ from core.settings import Settings, VectorStoreSettings, resolve_path
 from core.trace.trace_context import TraceContext
 from core.types import RetrievalResult
 from ingestion.storage.bm25_indexer import BM25Indexer, BM25IndexerError
+from observability.logger import write_trace
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 10
 
@@ -176,19 +180,86 @@ def execute_query_pipeline(
     filtered = HybridSearch._apply_metadata_filters(fusion_results, processed.filters)
 
     if no_rerank:
-        return QueryPipelineResult(
+        result = QueryPipelineResult(
             dense_results=dense_results,
             sparse_results=sparse_results,
             fusion_results=filtered,
             final_results=filtered[:top_k],
             rerank_result=None,
         )
+    else:
+        rerank_result = reranker.rerank(query, filtered, top_k=top_k, trace=trace)
+        result = QueryPipelineResult(
+            dense_results=dense_results,
+            sparse_results=sparse_results,
+            fusion_results=filtered,
+            final_results=rerank_result.results,
+            rerank_result=rerank_result,
+        )
 
-    rerank_result = reranker.rerank(query, filtered, top_k=top_k, trace=trace)
-    return QueryPipelineResult(
+    _persist_query_trace(
+        settings,
+        trace,
+        query=query,
         dense_results=dense_results,
         sparse_results=sparse_results,
         fusion_results=filtered,
-        final_results=rerank_result.results,
-        rerank_result=rerank_result,
+        final_results=result.final_results,
+        rerank_applied=not no_rerank,
     )
+    return result
+
+
+def _hit_snapshot(results: list[RetrievalResult], limit: int = 10) -> list[dict[str, Any]]:
+    """压缩召回列表，供 Dashboard Dense/Sparse/Rerank 对比。"""
+    rows: list[dict[str, Any]] = []
+    for rank, item in enumerate(results[:limit], start=1):
+        metadata = item.metadata or {}
+        title = metadata.get("title") or metadata.get("heading") or ""
+        source = metadata.get("source_path") or metadata.get("source") or ""
+        rows.append(
+            {
+                "rank": rank,
+                "chunk_id": item.chunk_id,
+                "score": round(float(item.score), 4),
+                "title": str(title),
+                "source_path": str(source),
+            }
+        )
+    return rows
+
+
+def _persist_query_trace(
+    settings: Settings,
+    trace: TraceContext | None,
+    *,
+    query: str,
+    dense_results: list[RetrievalResult],
+    sparse_results: list[RetrievalResult],
+    fusion_results: list[RetrievalResult],
+    final_results: list[RetrievalResult],
+    rerank_applied: bool,
+) -> None:
+    """写入 query_complete 并落盘 jsonl，供 G6 Query 追踪页读取。"""
+    if not isinstance(trace, TraceContext):
+        return
+    trace.record_stage(
+        "query_complete",
+        elapsed_ms=0.0,
+        method="pipeline",
+        query=query,
+        collection=settings.vector_store.collection_name,
+        rerank_applied=rerank_applied,
+        dense_hits=_hit_snapshot(dense_results),
+        sparse_hits=_hit_snapshot(sparse_results),
+        fusion_hits=_hit_snapshot(fusion_results),
+        rerank_hits=_hit_snapshot(final_results),
+    )
+    if not trace.is_finished:
+        trace.finish()
+    if not settings.observability.trace_enabled:
+        return
+    try:
+        write_trace(trace.to_dict())
+    except Exception:
+        logger.warning("写入 traces.jsonl 失败", exc_info=True)

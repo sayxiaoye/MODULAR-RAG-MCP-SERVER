@@ -135,3 +135,89 @@ class TestTraceService:
         assert found is not None
         assert found.trace_id == "abc"
         assert service.get_trace("missing") is None
+
+
+def _query_payload() -> dict:
+    return {
+        "trace_id": "q-1",
+        "trace_type": "query",
+        "started_at": "2026-08-31T05:00:00+00:00",
+        "finished_at": "2026-08-31T05:00:01+00:00",
+        "total_elapsed_ms": 33.0,
+        "stages": [
+            {"name": "query_processor", "elapsed_ms": 2.0, "method": "keyword"},
+            {"name": "dense_retriever", "elapsed_ms": 10.0, "method": "vector"},
+            {"name": "sparse_retriever", "elapsed_ms": 8.0, "method": "bm25"},
+            {"name": "fusion", "elapsed_ms": 1.0, "method": "rrf"},
+            {"name": "rerank", "elapsed_ms": 12.0, "method": "none", "provider": "none"},
+            {
+                "name": "query_complete",
+                "elapsed_ms": 0.0,
+                "query": "Azure 配置指南",
+                "collection": "knowledge_hub",
+                "dense_hits": [
+                    {"rank": 1, "chunk_id": "d1", "score": 0.9, "title": "Dense", "source_path": "a.pdf"},
+                ],
+                "sparse_hits": [
+                    {"rank": 1, "chunk_id": "s1", "score": 4.2, "title": "Sparse", "source_path": "b.pdf"},
+                ],
+                "fusion_hits": [
+                    {"rank": 1, "chunk_id": "s1", "score": 0.03, "title": "Sparse", "source_path": "b.pdf"},
+                    {"rank": 2, "chunk_id": "d1", "score": 0.02, "title": "Dense", "source_path": "a.pdf"},
+                ],
+                "rerank_hits": [
+                    {"rank": 1, "chunk_id": "d1", "score": 0.99, "title": "Dense", "source_path": "a.pdf"},
+                    {"rank": 2, "chunk_id": "s1", "score": 0.1, "title": "Sparse", "source_path": "b.pdf"},
+                ],
+            },
+        ],
+    }
+
+
+@pytest.mark.unit
+class TestQueryTraceHelpers:
+    """验证 Query 瀑布图别名、关键词筛选与 Rerank 排名变化。"""
+
+    def test_query_waterfall_uses_component_aliases(self) -> None:
+        """dense_retriever 等组件名应映射到 F3 规范阶段。"""
+        record = parse_trace_payload(_query_payload())
+        assert record is not None
+        names = [name for name, _ in record.query_waterfall_rows()]
+        assert names == [
+            "query_processing",
+            "dense_retrieval",
+            "sparse_retrieval",
+            "fusion",
+            "rerank",
+        ]
+
+    def test_keyword_filter_matches_query_text(self, tmp_path: Path) -> None:
+        """list_traces 应按 Query 文本过滤。"""
+        path = tmp_path / "traces.jsonl"
+        write_trace(_query_payload(), path=path)
+        write_trace(
+            {
+                "trace_id": "q-2",
+                "trace_type": "query",
+                "started_at": "2026-08-31T06:00:00+00:00",
+                "finished_at": "2026-08-31T06:00:01+00:00",
+                "total_elapsed_ms": 1,
+                "stages": [{"name": "query_complete", "query": "完全无关的问题"}],
+            },
+            path=path,
+        )
+        service = TraceService(path)
+        matched = service.list_traces("query", keyword="Azure")
+        assert [item.trace_id for item in matched] == ["q-1"]
+
+    def test_rerank_rank_changes_marks_jumps(self) -> None:
+        """精排后排名上升应标记 ↑，下降标记 ↓。"""
+        record = parse_trace_payload(_query_payload())
+        assert record is not None
+        changes = {item["chunk_id"]: item for item in record.rerank_rank_changes()}
+        assert changes["d1"]["fusion_rank"] == 2
+        assert changes["d1"]["rerank_rank"] == 1
+        assert changes["d1"]["delta"] == 1
+        assert changes["d1"]["mark"] == "↑"
+        assert changes["s1"]["mark"] == "↓"
+        assert record.lane_hits("dense")[0]["chunk_id"] == "d1"

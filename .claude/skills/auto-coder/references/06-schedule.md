@@ -130,7 +130,7 @@
 | G3 | 数据浏览器页面 | [x] | 2026-08-31 | DataService + 数据浏览器页面 + 集合筛选，9个单元测试 |
 | G4 | Ingestion 管理页面 | [x] | 2026-08-31 | 上传/路径摄取 + on_progress 进度条 + DocumentManager 删除，7个单元测试 |
 | G5 | Ingestion 追踪页面 | [x] | 2026-08-31 | TraceService 解析 jsonl + 摄取瀑布图，Pipeline 落盘，7个单元测试 |
-| G6 | Query 追踪页面 | [ ] | | |
+| G6 | Query 追踪页面 | [x] | 2026-08-31 | Query 追踪 + Dense/Sparse/Rerank 对比，Pipeline 落盘，5个单元测试 |
 
 #### 阶段 H：评估体系
 
@@ -164,10 +164,10 @@
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
-| 阶段 G | 6 | 5 | 83% |
+| 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **59** | **84%** |
+| **总计** | **70** | **60** | **86%** |
 
 
 ---
@@ -1139,7 +1139,7 @@
 - **验收标准**：执行 ingest 后，Dashboard 显示对应的追踪记录与耗时瀑布图。
 - **测试方法**：手动验证（先 ingest → 打开 Dashboard → 查看追踪）。
 
-### G6：Query 追踪页面
+### G6：Query 追踪页面 ✅
 - **目标**：实现 Dashboard Query 追踪页面（查询历史、Dense/Sparse 对比、Rerank 变化）。
 - **前置依赖**：F3（Query 埋点）、G1（Dashboard 架构）、G5（TraceService 已实现）
 - **修改文件**：

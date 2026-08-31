@@ -12,6 +12,21 @@ from observability.logger import resolve_trace_file
 
 # 摄取瀑布图使用的规范阶段（与 F4 埋点一致）
 INGESTION_WATERFALL_STAGES = ("load", "split", "transform", "embed", "upsert")
+# 查询瀑布图使用的规范阶段（与 F3 埋点一致）；兼容组件级阶段名
+QUERY_WATERFALL_STAGES = (
+    "query_processing",
+    "dense_retrieval",
+    "sparse_retrieval",
+    "fusion",
+    "rerank",
+)
+_QUERY_STAGE_ALIASES: dict[str, tuple[str, ...]] = {
+    "query_processing": ("query_processing", "query_processor"),
+    "dense_retrieval": ("dense_retrieval", "dense_retriever"),
+    "sparse_retrieval": ("sparse_retrieval", "sparse_retriever"),
+    "fusion": ("fusion",),
+    "rerank": ("rerank",),
+}
 
 
 @dataclass(frozen=True)
@@ -91,6 +106,85 @@ class TraceRecord:
         except (TypeError, ValueError):
             return 0
 
+    @property
+    def query_text(self) -> str | None:
+        """查询原文，来自 query_complete.query。"""
+        return _first_detail(self.stages, "query")
+
+    def matches_keyword(self, keyword: str) -> bool:
+        """按查询文本 / 来源路径 / trace_id 做不区分大小写匹配。"""
+        needle = keyword.strip().lower()
+        if not needle:
+            return True
+        haystacks = [self.query_text or "", self.source_path or "", self.trace_id]
+        return any(needle in item.lower() for item in haystacks)
+
+    def query_waterfall_rows(self) -> list[tuple[str, float]]:
+        """按 F3 规范阶段顺序输出耗时；兼容 dense_retriever 等组件级名称。"""
+        by_name = {item.name: item.elapsed_ms for item in self.stages}
+        rows: list[tuple[str, float]] = []
+        for canonical in QUERY_WATERFALL_STAGES:
+            elapsed = None
+            for alias in _QUERY_STAGE_ALIASES[canonical]:
+                if alias in by_name:
+                    elapsed = float(by_name[alias])
+                    break
+            if elapsed is not None:
+                rows.append((canonical, elapsed))
+        return rows
+
+    def lane_hits(self, lane: str) -> list[dict[str, Any]]:
+        """读取 query_complete 中 dense/sparse/fusion/rerank 命中快照。"""
+        complete = _stage_by_name(self.stages, "query_complete")
+        if complete is None:
+            return []
+        key = f"{lane}_hits"
+        raw = complete.details.get(key)
+        if not isinstance(raw, list):
+            return []
+        return [dict(item) for item in raw if isinstance(item, Mapping)]
+
+    def rerank_rank_changes(self) -> list[dict[str, Any]]:
+        """融合排名 vs 精排排名：正 delta 表示跃升。"""
+        fusion_hits = self.lane_hits("fusion")
+        rerank_hits = self.lane_hits("rerank")
+        before_rank = {
+            str(item.get("chunk_id")): int(item.get("rank"))
+            for item in fusion_hits
+            if item.get("chunk_id") is not None and item.get("rank") is not None
+        }
+        rows: list[dict[str, Any]] = []
+        for item in rerank_hits:
+            chunk_id = str(item.get("chunk_id") or "")
+            after = item.get("rank")
+            try:
+                after_rank = int(after)
+            except (TypeError, ValueError):
+                continue
+            before = before_rank.get(chunk_id)
+            delta = None if before is None else before - after_rank
+            if delta is None:
+                mark = "—"
+            elif delta > 0:
+                mark = "↑"
+            elif delta < 0:
+                mark = "↓"
+            else:
+                mark = "—"
+            rows.append(
+                {
+                    "chunk_id": chunk_id,
+                    "title": str(item.get("title") or ""),
+                    "source_path": str(item.get("source_path") or ""),
+                    "score": item.get("score"),
+                    "fusion_rank": before,
+                    "rerank_rank": after_rank,
+                    "delta": delta,
+                    "mark": mark,
+                }
+            )
+        return rows
+
     def waterfall_rows(self) -> list[tuple[str, float]]:
         """按 F4 规范阶段顺序输出 (name, elapsed_ms)，供横向条形图。"""
         by_name = {item.name: item.elapsed_ms for item in self.stages}
@@ -117,18 +211,21 @@ class TraceService:
         resolved = settings or load_settings()
         return cls(resolve_path(resolved.observability.trace_file))
 
-    def list_traces(self, trace_type: str | None = None) -> list[TraceRecord]:
+    def list_traces(self, trace_type: str | None = None, keyword: str | None = None) -> list[TraceRecord]:
         """
         读取全部 Trace，按 started_at 倒序。
 
         Args:
             trace_type: 如 ``ingestion`` / ``query``；空则不过滤。
+            keyword: 对 query 文本 / source_path / trace_id 做子串筛选。
         """
         path = self._resolve_path()
         records = _read_jsonl(path)
         if trace_type:
             wanted = trace_type.strip()
             records = [item for item in records if item.trace_type == wanted]
+        if keyword and keyword.strip():
+            records = [item for item in records if item.matches_keyword(keyword)]
         records.sort(key=lambda item: item.started_at or "", reverse=True)
         return records
 
@@ -215,6 +312,13 @@ def _parse_stage(item: Mapping[str, Any]) -> StageView:
         provider=None if provider is None else str(provider),
         details=details,
     )
+
+
+def _stage_by_name(stages: list[StageView], name: str) -> StageView | None:
+    for stage in reversed(stages):
+        if stage.name == name:
+            return stage
+    return None
 
 
 def _first_detail(stages: list[StageView], key: str) -> str | None:
