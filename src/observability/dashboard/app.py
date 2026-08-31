@@ -12,13 +12,14 @@ if str(_SRC_ROOT) not in sys.path:
 
 import streamlit as st
 
+from observability.dashboard.pages.data_browser import render as render_data_browser
 from observability.dashboard.pages.overview import render as render_overview
 
 st.set_page_config(page_title="Modular RAG Dashboard", layout="wide")
 
 
 def _placeholder(title: str, hint: str):
-    """未实现页面的占位渲染器，后续 G3–G6 / H4 再替换为真实页面。"""
+    """未实现页面的占位渲染器，后续 G4–G6 / H4 再替换为真实页面。"""
 
     def render() -> None:
         st.header(title)
@@ -32,10 +33,7 @@ _NAV = st.navigation(
     {
         "观测": [
             st.Page(render_overview, title="系统总览", default=True),
-            st.Page(
-                _placeholder("数据浏览器", "数据浏览器将在 G3 实现。"),
-                title="数据浏览器",
-            ),
+            st.Page(render_data_browser, title="数据浏览器"),
         ],
         "摄取": [
             st.Page(

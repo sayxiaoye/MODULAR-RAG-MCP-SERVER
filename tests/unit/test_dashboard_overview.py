@@ -8,11 +8,6 @@ pytest.importorskip("streamlit")
 
 from streamlit.testing.v1 import AppTest
 
-from core.settings import load_settings
-from libs.vector_store.chroma_store import CollectionStats
-from observability.dashboard.pages.overview import render_overview
-from observability.dashboard.services.config_service import ConfigService
-
 
 @pytest.mark.unit
 class TestOverviewPage:
@@ -21,6 +16,12 @@ class TestOverviewPage:
     def test_overview_renders_component_metrics(self) -> None:
         """总览页应展示 LLM 等组件 metric，以及注入的集合统计。"""
         def page_script() -> None:
+            # AppTest.from_function 抽取源码后无测试模块全局名，需在函数内导入
+            from core.settings import load_settings
+            from libs.vector_store.chroma_store import CollectionStats
+            from observability.dashboard.pages.overview import render_overview
+            from observability.dashboard.services.config_service import ConfigService
+
             render_overview(
                 config_service=ConfigService(load_settings()),
                 stats=CollectionStats(
