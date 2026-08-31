@@ -198,3 +198,52 @@ class ChromaStore(BaseVectorStore):
             chunk_count=chunk_count,
             document_count=len(sources),
         )
+
+    def get_by_metadata(
+        self,
+        filters: Mapping[str, Any] | None = None,
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 metadata 等值条件读取 documents 与 metadatas。"""
+        where = _build_where_clause(filters)
+        try:
+            raw = self._collection.get(
+                where=where,
+                include=["documents", "metadatas"],
+            )
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] get_by_metadata 失败: {exc}") from exc
+
+        raw_ids = raw.get("ids", [])
+        documents = raw.get("documents", [])
+        metadatas = raw.get("metadatas", [])
+        results: list[dict[str, Any]] = []
+        for index, record_id in enumerate(raw_ids):
+            doc_text = documents[index] if documents else ""
+            metadata = metadatas[index] if metadatas else {}
+            results.append(
+                {
+                    "id": str(record_id),
+                    "text": str(doc_text or ""),
+                    "metadata": dict(metadata or {}),
+                }
+            )
+        return self._validate_get_by_ids_results(results)
+
+    def delete_by_metadata(
+        self,
+        filters: Mapping[str, Any],
+        trace: Any | None = None,
+    ) -> int:
+        """按 metadata 条件删除，返回删除条数。"""
+        if not filters:
+            raise VectorStoreError("delete_by_metadata 的 filter 不能为空")
+        records = self.get_by_metadata(filters, trace=trace)
+        ids = [item["id"] for item in records]
+        if not ids:
+            return 0
+        try:
+            self._collection.delete(ids=ids)
+        except Exception as exc:
+            raise VectorStoreError(f"[chroma] delete_by_metadata 失败: {exc}") from exc
+        return len(ids)

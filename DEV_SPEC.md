@@ -2044,7 +2044,7 @@ dashboard:
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | G1 | Dashboard 基础架构与系统总览页 | [x] | 2026-08-27 | st.navigation 六页面 + Overview/ConfigService + Chroma stats，4个单元测试 |
-| G2 | DocumentManager 实现 | [ ] | | |
+| G2 | DocumentManager 实现 | [x] | 2026-08-31 | DocumentManager list/delete/stats + 四存储删除接口，7个单元测试 |
 | G3 | 数据浏览器页面 | [ ] | | |
 | G4 | Ingestion 管理页面 | [ ] | | |
 | G5 | Ingestion 追踪页面 | [ ] | | |
@@ -2082,10 +2082,10 @@ dashboard:
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
-| 阶段 G | 6 | 1 | 17% |
+| 阶段 G | 6 | 2 | 33% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **55** | **79%** |
+| **总计** | **70** | **56** | **80%** |
 
 
 ---
@@ -2998,7 +2998,7 @@ dashboard:
 - **验收标准**：`streamlit run src/observability/dashboard/app.py` 可启动，总览页展示当前配置信息。
 - **测试方法**：手动运行 `python scripts/start_dashboard.py` 并验证页面渲染。
 
-### G2：DocumentManager 实现
+### G2：DocumentManager 实现 ✅
 - **目标**：实现 `src/ingestion/document_manager.py`：跨存储的文档生命周期管理（list/delete/stats）。
 - **前置依赖**：C5（Pipeline + 各存储模块已就绪）
 - **修改文件**：

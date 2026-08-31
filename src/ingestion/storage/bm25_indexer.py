@@ -166,6 +166,23 @@ class BM25Indexer:
         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
         return ranked[:top_k]
 
+    def remove_document(self, source: str, chunk_ids: Sequence[str] | None = None) -> None:
+        """
+        移除指定文档的倒排条目。
+
+        Args:
+            source: 文档 source_path；若未提供 chunk_ids，则删除 chunk_id 等于 source 的条目。
+            chunk_ids: 可选，由 DocumentManager 从向量库查出的该文档 chunk 列表。
+        """
+        if not source or not str(source).strip():
+            raise BM25IndexerError("source 不能为空")
+        ids = [str(item).strip() for item in (chunk_ids or []) if str(item).strip()]
+        if not ids:
+            ids = [str(source).strip()]
+        for chunk_id in ids:
+            self._remove_chunk(chunk_id)
+        self._recompute_metadata()
+
     def get_idf(self, term: str) -> float | None:
         """获取词项 IDF，便于单元测试验证。"""
         term_data = self._terms.get(term.lower())

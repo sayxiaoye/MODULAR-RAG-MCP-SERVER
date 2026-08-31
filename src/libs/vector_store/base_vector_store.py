@@ -70,6 +70,31 @@ class BaseVectorStore(ABC):
             记录列表，每项含 id、text、metadata 字段（顺序不保证与输入一致）。
         """
 
+    def get_by_metadata(
+        self,
+        filters: Mapping[str, Any] | None = None,
+        trace: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 metadata 过滤读取记录；默认实现未提供时由子类覆盖。"""
+        raise VectorStoreError("当前 VectorStore 未实现 get_by_metadata")
+
+    def delete_by_metadata(
+        self,
+        filters: Mapping[str, Any],
+        trace: Any | None = None,
+    ) -> int:
+        """
+        按 metadata 条件批量删除。
+
+        Args:
+            filters: 等值过滤条件（如 source_path / collection）。
+            trace: 可选追踪上下文。
+
+        Returns:
+            删除的记录条数。
+        """
+        raise VectorStoreError("当前 VectorStore 未实现 delete_by_metadata")
+
     def _validate_upsert_records(
         self,
         records: Sequence[Mapping[str, Any]],

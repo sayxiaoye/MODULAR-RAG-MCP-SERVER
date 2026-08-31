@@ -60,6 +60,14 @@ class FileIntegrityChecker(ABC):
     ) -> None:
         """记录摄取失败原因，不触发 should_skip。"""
 
+    @abstractmethod
+    def remove_record(self, file_hash: str) -> None:
+        """删除摄取历史，使文件可被重新摄入。"""
+
+    @abstractmethod
+    def list_processed(self) -> list[dict]:
+        """列出已记录的摄取历史（含 success/failed）。"""
+
 
 class SQLiteIntegrityChecker(FileIntegrityChecker):
     """基于 SQLite 的默认完整性检查器，数据库位于 data/db/ingestion_history.db。"""
@@ -153,3 +161,37 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
                 """,
                 (file_hash, stored_path, file_size, error_msg),
             )
+
+    def remove_record(self, file_hash: str) -> None:
+        """按 file_hash 删除历史记录。"""
+        if not file_hash:
+            raise FileIntegrityError("file_hash 不能为空")
+        with self._connect() as conn:
+            conn.execute(
+                "DELETE FROM ingestion_history WHERE file_hash = ?",
+                (file_hash,),
+            )
+
+    def list_processed(self) -> list[dict]:
+        """返回全部摄取历史，按 processed_at 倒序。"""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT file_hash, file_path, file_size, status, processed_at,
+                       error_msg, chunk_count
+                FROM ingestion_history
+                ORDER BY processed_at DESC
+                """
+            ).fetchall()
+        return [
+            {
+                "file_hash": row[0],
+                "file_path": row[1],
+                "file_size": row[2],
+                "status": row[3],
+                "processed_at": row[4],
+                "error_msg": row[5],
+                "chunk_count": row[6],
+            }
+            for row in rows
+        ]
