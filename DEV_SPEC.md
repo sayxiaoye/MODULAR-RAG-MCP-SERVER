@@ -2046,7 +2046,7 @@ dashboard:
 | G1 | Dashboard 基础架构与系统总览页 | [x] | 2026-08-27 | st.navigation 六页面 + Overview/ConfigService + Chroma stats，4个单元测试 |
 | G2 | DocumentManager 实现 | [x] | 2026-08-31 | DocumentManager list/delete/stats + 四存储删除接口，7个单元测试 |
 | G3 | 数据浏览器页面 | [x] | 2026-08-31 | DataService + 数据浏览器页面 + 集合筛选，9个单元测试 |
-| G4 | Ingestion 管理页面 | [ ] | | |
+| G4 | Ingestion 管理页面 | [x] | 2026-08-31 | 上传/路径摄取 + on_progress 进度条 + DocumentManager 删除，7个单元测试 |
 | G5 | Ingestion 追踪页面 | [ ] | | |
 | G6 | Query 追踪页面 | [ ] | | |
 
@@ -2082,10 +2082,10 @@ dashboard:
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
-| 阶段 G | 6 | 3 | 50% |
+| 阶段 G | 6 | 4 | 67% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **57** | **81%** |
+| **总计** | **70** | **58** | **83%** |
 
 
 ---
@@ -3032,7 +3032,7 @@ dashboard:
 - **验收标准**：可在 Dashboard 中浏览已摄入的文档和 chunk 详情。
 - **测试方法**：手动验证（先 ingest 样例数据，再在 Dashboard 浏览）。
 
-### G4：Ingestion 管理页面
+### G4：Ingestion 管理页面 ✅
 - **目标**：实现 Dashboard Ingestion 管理页面（文件上传触发摄取、进度展示、文档删除）。
 - **前置依赖**：G2（DocumentManager）、G3（DataService）、F5（on_progress 回调）
 - **修改文件**：
