@@ -2047,7 +2047,7 @@ dashboard:
 | G2 | DocumentManager 实现 | [x] | 2026-08-31 | DocumentManager list/delete/stats + 四存储删除接口，7个单元测试 |
 | G3 | 数据浏览器页面 | [x] | 2026-08-31 | DataService + 数据浏览器页面 + 集合筛选，9个单元测试 |
 | G4 | Ingestion 管理页面 | [x] | 2026-08-31 | 上传/路径摄取 + on_progress 进度条 + DocumentManager 删除，7个单元测试 |
-| G5 | Ingestion 追踪页面 | [ ] | | |
+| G5 | Ingestion 追踪页面 | [x] | 2026-08-31 | TraceService 解析 jsonl + 摄取瀑布图，Pipeline 落盘，7个单元测试 |
 | G6 | Query 追踪页面 | [ ] | | |
 
 #### 阶段 H：评估体系
@@ -2082,10 +2082,10 @@ dashboard:
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
-| 阶段 G | 6 | 4 | 67% |
+| 阶段 G | 6 | 5 | 83% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **58** | **83%** |
+| **总计** | **70** | **59** | **84%** |
 
 
 ---
@@ -3044,7 +3044,7 @@ dashboard:
 - **验收标准**：可在 Dashboard 中上传文件触发摄取、看到实时进度条、删除已有文档。
 - **测试方法**：手动验证（上传 PDF → 观察进度 → 删除 → 确认已移除）。
 
-### G5：Ingestion 追踪页面
+### G5：Ingestion 追踪页面 ✅
 - **目标**：实现 Dashboard Ingestion 追踪页面（摄取历史列表、阶段耗时瀑布图）。
 - **前置依赖**：F4（Ingestion 埋点）、G1（Dashboard 架构）
 - **修改文件**：

@@ -29,6 +29,7 @@ from libs.loader.file_integrity import FileIntegrityChecker, SQLiteIntegrityChec
 from libs.loader.pdf_loader import PdfLoader
 from libs.vector_store.base_vector_store import BaseVectorStore
 from libs.vector_store.vector_store_factory import VectorStoreFactory
+from observability.logger import write_trace
 
 logger = logging.getLogger(__name__)
 
@@ -138,6 +139,14 @@ class IngestionPipeline:
             )
             if file_hash is None:
                 logger.info("跳过已摄取文件: %s", resolved_source)
+                active_trace.record_stage(
+                    "skipped",
+                    elapsed_ms=0.0,
+                    source_path=resolved_source,
+                    collection=collection_name,
+                )
+                active_trace.finish()
+                self._persist_trace(active_trace)
                 return IngestionResult(
                     skipped=True,
                     source_path=resolved_source,
@@ -183,8 +192,12 @@ class IngestionPipeline:
                 elapsed_ms=0.0,
                 method="pipeline",
                 chunk_count=len(chunks),
+                image_count=image_count,
+                source_path=resolved_source,
+                collection=collection_name,
             )
             active_trace.finish()
+            self._persist_trace(active_trace)
 
             logger.info(
                 "摄取完成: path=%s collection=%s chunks=%d images=%d",
@@ -203,9 +216,11 @@ class IngestionPipeline:
                 chunk_ids=chunk_ids,
                 trace_id=active_trace.trace_id,
             )
-        except IngestionPipelineError:
+        except IngestionPipelineError as exc:
+            self._persist_failed_trace(active_trace, exc.stage, str(exc))
             raise
         except Exception as exc:
+            self._persist_failed_trace(active_trace, "pipeline", str(exc))
             raise IngestionPipelineError("pipeline", str(exc)) from exc
 
     def _run_integrity_precheck(
@@ -507,6 +522,25 @@ class IngestionPipeline:
             except Exception:
                 return None
         return None
+
+    def _persist_trace(self, trace: TraceContext) -> None:
+        """把已 finish 的 trace 追加到 traces.jsonl；失败不影响摄取主流程。"""
+        if not self._base_settings.observability.trace_enabled:
+            return
+        try:
+            write_trace(trace.to_dict())
+        except Exception:
+            logger.warning("写入 traces.jsonl 失败", exc_info=True)
+
+    def _persist_failed_trace(self, trace: TraceContext, stage: str, message: str) -> None:
+        """失败时补记 error 阶段再落盘，供 Dashboard 展示失败状态。"""
+        try:
+            trace.record_stage("error", elapsed_ms=0.0, method=stage, error=message)
+            if not trace.is_finished:
+                trace.finish()
+            self._persist_trace(trace)
+        except Exception:
+            logger.warning("写入失败 trace 失败", exc_info=True)
 
     @staticmethod
     def _notify_progress(

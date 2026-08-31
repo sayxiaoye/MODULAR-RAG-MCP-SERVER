@@ -14,13 +14,14 @@ import streamlit as st
 
 from observability.dashboard.pages.data_browser import render as render_data_browser
 from observability.dashboard.pages.ingestion_manager import render as render_ingestion_manager
+from observability.dashboard.pages.ingestion_traces import render as render_ingestion_traces
 from observability.dashboard.pages.overview import render as render_overview
 
 st.set_page_config(page_title="Modular RAG Dashboard", layout="wide")
 
 
 def _placeholder(title: str, hint: str):
-    """未实现页面的占位渲染器，后续 G5–G6 / H4 再替换为真实页面。"""
+    """未实现页面的占位渲染器，后续 G6 / H4 再替换为真实页面。"""
 
     def render() -> None:
         st.header(title)
@@ -38,10 +39,7 @@ _NAV = st.navigation(
         ],
         "摄取": [
             st.Page(render_ingestion_manager, title="Ingestion 管理"),
-            st.Page(
-                _placeholder("Ingestion 追踪", "摄取追踪将在 G5 实现。"),
-                title="Ingestion 追踪",
-            ),
+            st.Page(render_ingestion_traces, title="Ingestion 追踪"),
         ],
         "查询与评估": [
             st.Page(
