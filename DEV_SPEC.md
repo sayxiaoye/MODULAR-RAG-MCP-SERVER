@@ -195,24 +195,26 @@
 - Loader（统一格式与元数据）
 	- **前置去重 (Early Exit / File Integrity Check)**：
 		- 机制：在解析文件前，计算原始文件的 SHA256 哈希指纹。
-		- 动作：检索 `ingestion_history` 表，若发现相同 Hash 且状态为 `success` 的记录，则认定该文件未发生变更，直接跳过后续所有处理（解析、切分、LLM重写），实现**零成本 (Zero-Cost)** 的增量更新。
+		- 动作：检索 `ingestion_history` 表，若发现**同一 `file_hash` 且同一 `collection`** 且状态为 `success` 的记录，再核对目标 Chroma 集合中是否仍有该文件的 chunk；两者都满足才跳过后续处理。换集合摄入、或该集合向量已删光时必须重新摄取（可用 `--force` 强制重跑）。
 		- **存储方案**（初期实现，可插拔）：
 			- **默认选择：SQLite**，存储于 `data/db/ingestion_history.db`
 			- **表结构**：
 				```sql
 				CREATE TABLE ingestion_history (
-				    file_hash TEXT PRIMARY KEY,
+				    file_hash TEXT NOT NULL,
+				    collection TEXT NOT NULL DEFAULT '',
 				    file_path TEXT NOT NULL,
 				    file_size INTEGER,
 				    status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'processing')),
 				    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				    error_msg TEXT,
-				    chunk_count INTEGER
+				    chunk_count INTEGER,
+				    PRIMARY KEY (file_hash, collection)
 				);
 				CREATE INDEX idx_status ON ingestion_history(status);
 				CREATE INDEX idx_processed_at ON ingestion_history(processed_at);
 				```
-			- **查询逻辑**：`SELECT status FROM ingestion_history WHERE file_hash = ? AND status = 'success'`
+			- **查询逻辑**：`SELECT status FROM ingestion_history WHERE file_hash = ? AND collection = ?`（仅 `success` 参与跳过）。旧库无 `collection` 列时启动时迁移，历史行 `collection=''`，不挡住具名集合的新摄入。
 			- **替换路径**：后续可升级为 Redis（分布式缓存）或 PostgreSQL（企业级中心化存储）
 	
 	> **📌 持久化存储架构统一说明**
@@ -221,9 +223,9 @@
 	> 
 	> | 存储模块 | 数据库文件 | 用途 | 表结构关键字段 |
 	> |---------|-----------|------|---------------|
-	> | **文件完整性检查** | `data/db/ingestion_history.db` | 记录已处理文件的 SHA256 哈希，实现增量摄取 | `file_hash`, `status`, `processed_at` |
+	> | **文件完整性检查** | `data/db/ingestion_history.db` | 按 `(file_hash, collection)` 记录已处理文件，实现按集合增量摄取 | `file_hash`, `collection`, `status`, `processed_at` |
 	> | **图片索引映射** | `data/db/image_index.db` | 记录 image_id → 文件路径映射，支持图片检索与引用 | `image_id`, `file_path`, `collection` |
-	> | **BM25 索引元数据** | `data/db/bm25/` | 存储倒排索引和 IDF 统计信息（未来可扩展用 SQLite） | 当前使用 pickle，可迁移至 SQLite |
+	> | **BM25 索引** | `data/db/bm25/{collection}.json` | 每逻辑集合一份倒排索引（JSON）；增量摄入须先 load 再 add | `N`, `doc_lengths`, `terms` |
 	> 
 	> **设计优势**：
 	> - **零依赖部署**：无需安装 MySQL/PostgreSQL 等数据库服务，`pip install` 即可运行
@@ -289,11 +291,13 @@
 		- `list_documents(collection?) -> List[DocumentInfo]`：列出已摄入文档及其统计信息（chunk 数、图片数、摄入时间）。
 		- `get_document_detail(doc_id) -> DocumentDetail`：获取单个文档的详细信息（所有 chunk 内容、metadata、关联图片）。
 		- `delete_document(source_path, collection) -> DeleteResult`：协调删除跨 4 个存储的关联数据：
-			1. **Chroma** — 按 `metadata.source` 删除所有 chunk 向量
-			2. **BM25 Indexer** — 移除对应文档的倒排索引条目
+			1. **Chroma** — 按 `metadata.source_path` + 目标 collection 删除 chunk；该集合已无向量时 `delete_collection`，并清理 persist 目录中 sqlite 不再引用的 UUID 段目录
+			2. **BM25 Indexer** — `remove_document(source, chunk_ids=..., doc_hash=...)`（Chroma 稳定 id 与 Sparse `{doc_hash}_{index}_…` 不一致时靠 doc_hash 前缀清 posting）；集合已空则删除 `bm25/{collection}.json`
 			3. **ImageStorage** — 删除该文档关联的所有图片文件
-			4. **FileIntegrity** — 移除处理记录，使文件可重新摄入
-		- `get_collection_stats(collection?) -> CollectionStats`：返回集合级统计（文档数、chunk 数、存储大小等）。
+			4. **FileIntegrity** — `remove_record(file_hash, collection=...)`，使该集合可重新摄入
+			5. **Trace** — 追加一条 `trace_type=ingestion`、阶段名为 `deleted` 的记录，Dashboard 状态显示「删除」
+		- **集合路由**：一个逻辑集合 = 一个 Chroma collection + `data/db/bm25/{name}.json`。`BaseVectorStore` 的 upsert/query/get/delete 均接受 `collection=`；`list_collection_names()` / `delete_collection()` 管理空壳集合。Dense 检索把 `filters["collection"]` 解释为 Chroma 集合名，其余条件仍作 metadata where。
+		- `get_collection_stats(collection?) -> CollectionStats`：返回集合级统计（文档数、chunk 数、图片数等）。
 
 	- **Pipeline 进度回调 (Progress Callback)**：在 `IngestionPipeline.run()` 方法中新增可选 `on_progress` 参数：
 		```python
@@ -303,11 +307,12 @@
 		- 回调签名：`on_progress(stage_name: str, current: int, total: int)`
 		- 各阶段（load / split / transform / embed / upsert）在处理每个 batch 时调用回调，Dashboard 据此展示实时进度条。
 		- `on_progress` 为 `None` 时行为与当前完全一致，不影响 CLI 和测试场景。
+		- **BM25 增量写入**：`_run_store` 对目标集合先 `BM25Indexer.load()`（文件不存在则空索引），再 `add` 当前文档，再 `save`。禁止每次新建空索引覆盖 `{collection}.json`。
 
 	- **存储层接口扩展**：为支持 DocumentManager 的删除操作，需扩展以下存储接口：
-		- `BaseVectorStore` 新增 `delete_by_metadata(filter: dict) -> int` — 按 metadata 条件批量删除
-		- `BM25Indexer` 新增 `remove_document(source: str) -> None` — 移除指定文档的索引条目
-		- `FileIntegrityChecker` 新增 `remove_record(file_hash: str) -> None` 和 `list_processed() -> List[dict]`
+		- `BaseVectorStore`：`delete_by_metadata(filter, collection=) -> int`；`list_collection_names() -> list[str]`；`delete_collection(name)`（含孤儿 UUID 目录清理）
+		- `BM25Indexer`：`remove_document(source, chunk_ids=None, *, doc_hash=None)`；`drop()` 清空并删除 json；`save()` 在 N=0 时删除文件
+		- `FileIntegrityChecker`：`should_skip(file_hash, collection=None)`；`mark_success(..., collection=None)`；`remove_record(file_hash, collection=None)`；`list_processed()`
 
 #### 3.1.2 检索流水线
 
@@ -770,7 +775,7 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - Splitter：类型 + chunk_size + overlap
     - Reranker：backend + model（或 None）
     - Evaluator：已启用的 backends 列表
-- **数据资产统计**：调用 `DocumentManager.get_collection_stats()` 展示各集合的文档数、chunk 数、图片数。
+- **数据资产统计**：调用 `DocumentManager.get_collection_stats()` / `ChromaStore.list_collection_names()` 展示各集合的文档数、chunk 数、图片数；下拉仅列出仍有向量的集合（删空后 `delete_collection`，不残留空壳）。
 - **系统健康指标**：最近一次 Ingestion/Query trace 的时间与耗时。
 
 **页面 2：数据浏览器 (Data Browser)**
@@ -789,12 +794,12 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - 利用 `on_progress` 回调驱动 Streamlit 进度条（`st.progress`），实时显示当前阶段与处理进度
 - **文档删除**：
     - 在文档列表中提供"删除"按钮
-    - 调用 `DocumentManager.delete_document()` 协调跨存储删除
-    - 删除完成后刷新列表
+    - 调用 `DocumentManager.delete_document()` 协调跨存储删除（含空集合 drop 与 BM25 json 清理）
+    - 删除完成后刷新列表，并在 Ingestion 追踪中出现状态「删除」
 - **注意**：Pipeline 执行为同步阻塞操作，Streamlit 的 rerun 机制天然支持（进度条在同一 request 中更新）。
 
 **页面 4：Ingestion 追踪 (Ingestion Traces)**
-- **摄取历史列表**：按时间倒序展示 `trace_type == "ingestion"` 的历史记录，显示文件名、集合、总耗时、状态（成功/失败）。
+- **摄取历史列表**：按时间倒序展示 `trace_type == "ingestion"` 的历史记录，显示文件名、集合、总耗时、状态（成功 / 跳过 / 失败 / 删除 / 进行中）。
 - **单次摄取详情**：
     - **阶段耗时瀑布图**：横向条形图展示 load/split/transform/embed/upsert 各阶段时间分布。
     - **处理统计**：chunk 数、图片数、跳过数、失败数。
@@ -1569,15 +1574,15 @@ smart-knowledge-hub/
 │   │   └── {collection}/                # 按集合分类（实际存储在 {doc_hash}/ 子目录下）
 │   └── db/                              # 数据库与索引文件目录
 │       ├── ingestion_history.db         # 文件完整性历史记录 (SQLite)
-│       │                                # 表结构：file_hash, file_path, status, processed_at, error_msg
-│       │                                # 用途：增量摄取，避免重复处理未变更文件
+│       │                                # 表结构：PRIMARY KEY (file_hash, collection)，另含 file_path, status, processed_at
+│       │                                # 用途：按集合增量摄取；换集合或该集合向量已空时不跳过
 │       ├── image_index.db               # 图片索引映射 (SQLite)
 │       │                                # 表结构：image_id, file_path, collection, doc_hash, page_num
 │       │                                # 用途：快速查询 image_id → 本地文件路径，支持图片检索与引用
 │       ├── chroma/                      # Chroma 向量库目录
-│       │                                # 存储 Dense Vector、Sparse Vector 与 Chunk Metadata
+│       │                                # 每逻辑集合一个 Chroma collection；delete_collection 后清理孤儿 UUID 段目录
 │       └── bm25/                        # BM25 索引目录
-│                                        # 存储倒排索引与 IDF 统计信息（当前使用 pickle）
+│           └── {collection}.json        # 每逻辑集合一份倒排索引（JSON）；空索引删除文件
 │
 ├── cache/                               # 缓存目录
 │   ├── embeddings/                      # Embedding 缓存 (按内容哈希)
@@ -1724,11 +1729,11 @@ smart-knowledge-hub/
 原始文档 (PDF)
       │
       ▼
-┌─────────────────┐     未变更则跳过
-│ File Integrity  │───────────────────────────► 结束
+┌─────────────────┐     同 (file_hash, collection) 已 success
+│ File Integrity  │     且该 Chroma 集合仍有 chunk ──► 结束（跳过）
 │   (SHA256)      │
 └────────┬────────┘
-         │ 新文件/已变更
+         │ 新文件 / 换集合 / 该集合向量已空 / --force
          ▼
 ┌─────────────────┐
 │     Loader      │  PDF → Markdown + 图片提取 + 元数据收集
@@ -1830,10 +1835,13 @@ Dashboard (Streamlit UI)
       │                                                       │
       │    删除文档：                                          │
       │    ├── DocumentManager.delete_document(source, col)   │
-      │    │   ├── ChromaStore.delete_by_metadata(source=...) │
-      │    │   ├── BM25Indexer.remove_document(source=...)    │
+      │    │   ├── ChromaStore.delete_by_metadata(..., col)   │
+      │    │   │   └── 集合已空 → delete_collection + 孤儿 UUID 目录清理 │
+      │    │   ├── BM25Indexer.remove_document(..., doc_hash) │
+      │    │   │   └── 集合已空 → 删除 bm25/{col}.json        │
       │    │   ├── ImageStorage.delete_images(col, doc_hash)  │
-      │    │   └── FileIntegrity.remove_record(file_hash)     │
+      │    │   ├── FileIntegrity.remove_record(hash, col)     │
+      │    │   └── 写入 ingestion Trace（阶段 deleted）       │
       │    └── 刷新文档列表                                    │
       │                                                       │
       └─── Trace 查看 ───────────────────────────────────────┘
@@ -1978,7 +1986,7 @@ dashboard:
 | B7.3 | OpenAI & Azure Embedding 实现 | [x] | 2026-08-07 | OpenAI/Azure Embedding + 核心复用 + 7个冒烟测试 |
 | B7.4 | Ollama Embedding 实现 | [x] | 2026-08-07 | OllamaEmbedding + 工厂注册 + 7个单元测试（legacy） |
 | B7.5 | Recursive Splitter 默认实现 | [x] | 2026-08-07 | RecursiveSplitter + LangChain + 工厂注册 + 5个单元测试 |
-| B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip + 5个集成测试 |
+| B7.6 | ChromaStore 默认实现 | [x] | 2026-08-08 | ChromaStore + 持久化 roundtrip；2026-09-01 起方法级 `collection=` + `delete_collection` / 孤儿段目录清理 |
 | B7.7 | LLM Reranker 实现 | [x] | 2026-08-08 | LLMReranker + prompt 加载 + 7个单元测试 |
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
 | B7.9 | LlamaCpp LLM 实现 | [x] | 2026-08-19 | LlamaCppLLM + 工厂注册 + 4个单元测试 |
@@ -1991,7 +1999,7 @@ dashboard:
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | C1 | 定义核心数据类型/契约（Document/Chunk/ChunkRecord） | [x] | 2026-08-10 | core/types + ImageMetadata + 6个单元测试 |
-| C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | file_integrity + SQLiteIntegrityChecker + WAL + 6个单元测试 |
+| C2 | 文件完整性检查（SHA256） | [x] | 2026-08-10 | 2026-09-01：PK `(file_hash, collection)`；跳过还需目标集合仍有 chunk |
 | C3 | Loader 抽象基类与 PDF Loader | [x] | 2026-08-10 | BaseLoader + PdfLoader + 图片占位符契约 + 5个单元测试 |
 | C4 | Splitter 集成（调用 Libs） | [x] | 2026-08-10 | DocumentChunker + 图片按需分发 + 6个单元测试 |
 | C5 | Transform 基类 + ChunkRefiner | [x] | 2026-08-10 | BaseTransform + ChunkRefiner + TraceContext + 28个单元测试 |
@@ -2000,10 +2008,10 @@ dashboard:
 | C8 | DenseEncoder | [x] | 2026-08-11 | DenseEncoder + EmbeddingFactory + 7个单元测试 |
 | C9 | SparseEncoder | [x] | 2026-08-11 | SparseEncoder + SparseChunkStats + 7个单元测试 |
 | C10 | BatchProcessor | [x] | 2026-08-11 | BatchProcessor + 分批 Dense/Sparse + 6个单元测试 |
-| C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | BM25Indexer + 倒排索引持久化 + 6个往返测试 |
+| C11 | BM25Indexer（倒排索引+IDF计算） | [x] | 2026-08-11 | `data/db/bm25/{collection}.json`；`remove_document(doc_hash=)`；空索引删文件 |
 | C12 | VectorUpserter（幂等upsert） | [x] | 2026-08-11 | VectorUpserter + 稳定 chunk_id + 6个幂等测试 |
 | C13 | ImageStorage（图片存储+SQLite索引） | [x] | 2026-08-11 | ImageStorage + SQLite image_index + 9个单元测试 |
-| C14 | Pipeline 编排（MVP 串起来） | [x] | 2026-08-11 | IngestionPipeline + 集成测试 5 项（Chroma/BM25/图片） |
+| C14 | Pipeline 编排（MVP 串起来） | [x] | 2026-08-11 | 2026-09-01：`_run_store` 先 load 再 add；跳过按集合且核对 Chroma |
 | C15 | 脚本入口 ingest.py | [x] | 2026-08-11 | scripts/ingest.py CLI + 5个 E2E 测试 |
 
 #### 阶段 D：Retrieval MVP
@@ -2011,8 +2019,8 @@ dashboard:
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | D1 | QueryProcessor（关键词提取 + filters） | [x] | 2026-08-12 | QueryProcessor + ProcessedQuery + 10个单元测试 |
-| D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | RetrievalResult + DenseRetriever + 6个单元测试 |
-| D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | SparseRetriever + get_by_ids + 8个单元测试 |
+| D2 | DenseRetriever（调用 VectorStore.query） | [x] | 2026-08-12 | `filters["collection"]` 作 Chroma 集合名，其余仍为 metadata where |
+| D3 | SparseRetriever（BM25 查询） | [x] | 2026-08-12 | 按 `collection_name` 加载 `bm25/{collection}.json`；`get_by_ids(..., collection=)` |
 | D4 | RRF Fusion | [x] | 2026-08-17 | RRFFusion + 10个单元测试 |
 | D5 | HybridSearch 编排 | [x] | 2026-08-18 | HybridSearch + 8个集成测试 |
 | D6 | Reranker（Core 层编排 + Fallback） | [x] | 2026-08-18 | Reranker + RerankResult + 8个单元测试 |
@@ -2043,11 +2051,11 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| G1 | Dashboard 基础架构与系统总览页 | [x] | 2026-08-27 | st.navigation 六页面 + Overview/ConfigService + Chroma stats，4个单元测试 |
-| G2 | DocumentManager 实现 | [x] | 2026-08-31 | DocumentManager list/delete/stats + 四存储删除接口，7个单元测试 |
-| G3 | 数据浏览器页面 | [x] | 2026-08-31 | DataService + 数据浏览器页面 + 集合筛选，9个单元测试 |
+| G1 | Dashboard 基础架构与系统总览页 | [x] | 2026-08-27 | Overview 按 `list_collection_names()` 展示真实集合统计 |
+| G2 | DocumentManager 实现 | [x] | 2026-08-31 | 2026-09-01：按集合删 Chroma/BM25；空集合 drop；删文档写 `deleted` Trace |
+| G3 | 数据浏览器页面 | [x] | 2026-08-31 | DataService 按集合读 Chroma；2026-09-01 与方法级 `collection=` 对齐 |
 | G4 | Ingestion 管理页面 | [x] | 2026-08-31 | 上传/路径摄取 + on_progress 进度条 + DocumentManager 删除，7个单元测试 |
-| G5 | Ingestion 追踪页面 | [x] | 2026-08-31 | TraceService 解析 jsonl + 摄取瀑布图，Pipeline 落盘，7个单元测试 |
+| G5 | Ingestion 追踪页面 | [x] | 2026-08-31 | 状态：成功 / 跳过 / 失败 / 删除 / 进行中（阶段名 `deleted`） |
 | G6 | Query 追踪页面 | [x] | 2026-08-31 | Query 追踪 + Dense/Sparse/Rerank 对比，Pipeline 落盘，5个单元测试 |
 
 #### 阶段 H：评估体系
@@ -2192,9 +2200,12 @@ dashboard:
   - `src/libs/vector_store/vector_store_factory.py`
   - `tests/unit/test_vector_store_contract.py`
 - **实现类/函数**：
-  - `BaseVectorStore.upsert(records, trace: TraceContext | None = None)`
-  - `BaseVectorStore.query(vector, top_k, filters, trace: TraceContext | None = None)`
-- **验收标准**：契约测试（contract test）约束输入输出 shape。
+  - `BaseVectorStore.upsert(records, *, collection: str | None = None, trace: TraceContext | None = None)`
+  - `BaseVectorStore.query(vector, top_k, filters, *, collection: str | None = None, trace: TraceContext | None = None)`
+  - `BaseVectorStore.get_by_ids` / `delete_by_metadata` / `get_by_metadata` 同样接受 `collection=`
+  - `BaseVectorStore.list_collection_names() -> list[str]`
+  - `BaseVectorStore.delete_collection(name: str)`
+- **验收标准**：契约测试（contract test）约束输入输出 shape；方法级 `collection=` 将逻辑集合路由到对应 Chroma collection。
 - **测试方法**：`pytest -q tests/unit/test_vector_store_contract.py`。
 
 ### B5：Reranker 抽象接口与工厂（含 None 回退） ✅
@@ -2291,6 +2302,8 @@ dashboard:
   - provider=chroma 时 `VectorStoreFactory` 可创建。
   - **必须完成完整的 upsert→query roundtrip 测试**：使用 mock 数据完成真实的存储和检索流程，验证返回结果的确定性和正确性。
   - 测试应覆盖：基本 upsert、向量查询、top_k 参数、metadata filters（如支持）。
+  - `ChromaStore` 持有 `PersistentClient`，按方法参数 `collection=` 解析目标集合；upsert 可 `create=True`，读路径 `create=False`（缺失集合返回空，不误建空壳）。
+  - `delete_collection` 后清理 persist 目录中 sqlite 不再引用的 UUID 段目录（`cleanup_orphan_segment_dirs`）；初始化时亦可清理。
   - 使用临时目录进行持久化测试，测试结束后清理。
 - **测试方法**：`pytest -q tests/integration/test_chroma_store_roundtrip.py`
 
@@ -2417,12 +2430,16 @@ dashboard:
   - `FileIntegrityChecker` 类（抽象接口）
   - `SQLiteIntegrityChecker(FileIntegrityChecker)` 类（默认实现）
     - `compute_sha256(path: str) -> str`
-    - `should_skip(file_hash: str) -> bool`
-    - `mark_success(file_hash: str, file_path: str, ...)`
-    - `mark_failed(file_hash: str, error_msg: str)`
+    - `should_skip(file_hash: str, collection: str | None = None) -> bool`
+    - `mark_success(file_hash, file_path, ..., collection: str | None = None)`
+    - `mark_failed(file_hash, error_msg, collection: str | None = None)`
+    - `remove_record(file_hash, collection: str | None = None)`
+    - `list_processed() -> List[dict]`
 - **验收标准**：
   - 同一文件多次计算hash结果一致
-  - 标记 success 后，`should_skip` 返回 `True`
+  - 标记 success 后，对**同一 collection** `should_skip` 返回 `True`；不同 collection 不跳过
+  - 目标 Chroma 集合已无该文件 chunk 时不得跳过（由 Pipeline 在 `should_skip` 之后核对）
+  - 主键为 `(file_hash, collection)`；旧库启动时迁移，历史行 `collection=''`
   - 数据库文件正确创建在 `data/db/ingestion_history.db`
   - 支持并发写入（SQLite WAL模式）
 - **测试方法**：`pytest -q tests/unit/test_file_integrity.py`。
@@ -2620,7 +2637,10 @@ dashboard:
 - **核心功能**：
   - 计算 IDF (Inverse Document Frequency)：`IDF(term) = log((N - df + 0.5) / (df + 0.5))`
   - 构建倒排索引结构：`{term: {idf, postings: [{chunk_id, tf, doc_length}]}}`
-  - 索引序列化与加载（支持增量更新与重建）
+  - 索引序列化与加载：每集合写入 `data/db/bm25/{collection}.json`（非 pickle）
+  - 增量更新：Pipeline 必须先 `load()` 已有 json，再 `add` 当前文档，再 `save()`
+  - `remove_document(source, chunk_ids=None, *, doc_hash=None)`：Chroma 稳定 id 与 Sparse `{doc_hash}_{index}_…` 不一致时靠 `doc_hash` 前缀清 posting
+  - `drop()` / `save()` 在 N=0 时删除 json 文件
 - **修改文件**：
   - `src/ingestion/storage/bm25_indexer.py`
   - `tests/unit/test_bm25_indexer_roundtrip.py`
@@ -2686,9 +2706,10 @@ dashboard:
   - **辅助测试**：`tests/fixtures/sample_documents/sample.pdf`（简单场景回归）
 - **验收标准**：
   - 对 `complex_technical_doc.pdf` 跑完整 pipeline，成功输出：
-    - 向量索引文件到 ChromaDB
-    - BM25 索引文件到 `data/db/bm25/`
+    - 向量索引文件到 ChromaDB（逻辑集合名 = Chroma collection 名）
+    - BM25 索引文件到 `data/db/bm25/{collection}.json`（先 load 再 add，禁止空索引覆盖）
     - 提取的图片到 `data/images/` (SHA256命名)
+  - 同一 `file_hash` 换集合摄入不跳过；该集合已无 chunk 时不跳过
   - Pipeline 日志清晰展示各阶段进度
   - 失败步骤抛出明确异常信息
 - **测试方法**：`pytest -v tests/integration/test_ingestion_pipeline.py`。
@@ -2727,7 +2748,7 @@ dashboard:
   - `RetrievalResult` dataclass：`chunk_id: str`, `score: float`, `text: str`, `metadata: Dict`
   - `DenseRetriever.__init__(settings, embedding_client?, vector_store?)`：支持依赖注入用于测试
   - `DenseRetriever.retrieve(query: str, top_k: int, filters?: dict, trace?) -> List[RetrievalResult]`
-  - 内部流程：`query → embedding_client.embed([query]) → vector_store.query(vector, top_k, filters) → 从返回结果提取 text → 规范化结果`
+  - 内部流程：`query → embedding_client.embed([query]) → 从 filters 抽出 collection 作为 Chroma 集合名 → vector_store.query(..., collection=) → 从返回结果提取 text → 规范化结果`
 - **验收标准**：
   - `RetrievalResult` 类型已定义并可序列化
   - ChromaStore.query() 返回结果包含 `text` 字段
@@ -2737,7 +2758,7 @@ dashboard:
 - **测试方法**：`pytest -q tests/unit/test_dense_retriever.py`（mock embedding + vector store）。
 
 ### D3：SparseRetriever（BM25 查询） ✅
-- **目标**：实现 `sparse_retriever.py`：从 `data/db/bm25/` 载入索引并查询。
+- **目标**：实现 `sparse_retriever.py`：按逻辑集合从 `data/db/bm25/{collection}.json` 载入索引并查询。
 - **前置任务**：需在 `BaseVectorStore` 和 `ChromaStore` 中添加 `get_by_ids()` 方法，用于根据 chunk_id 批量获取 text 和 metadata
 - **修改文件**：
   - `src/libs/vector_store/base_vector_store.py`（新增 `get_by_ids()` 抽象方法）
@@ -2747,11 +2768,11 @@ dashboard:
 - **实现类/函数**：
   - `BaseVectorStore.get_by_ids(ids: List[str]) -> List[Dict]`：根据 ID 批量获取记录
   - `ChromaStore.get_by_ids(ids: List[str]) -> List[Dict]`：调用 ChromaDB 的 get 方法
-  - `SparseRetriever.__init__(settings, bm25_indexer?, vector_store?)`：支持依赖注入用于测试
+  - `SparseRetriever.__init__(settings, bm25_indexer?, vector_store?)`：支持依赖注入用于测试；默认 indexer 路径与摄取一致（`collection=settings.vector_store.collection_name`）
   - `SparseRetriever.retrieve(keywords: List[str], top_k: int, trace?) -> List[RetrievalResult]`
   - 内部流程：
     1. `keywords → bm25_indexer.query(keywords, top_k) → [{chunk_id, score}]`
-    2. `chunk_ids → vector_store.get_by_ids(chunk_ids) → [{id, text, metadata}]`
+    2. `chunk_ids → vector_store.get_by_ids(chunk_ids, collection=...) → [{id, text, metadata}]`
     3. 合并 score 与 text/metadata，组装为 `RetrievalResult` 列表
   - 注意：keywords 来自 `QueryProcessor.process()` 的 `ProcessedQuery.keywords`
 - **验收标准**：
@@ -2993,7 +3014,7 @@ dashboard:
   - `scripts/start_dashboard.py`（新增：Dashboard 启动脚本）
 - **实现要点**：
   - `app.py` 使用 `st.navigation()` 注册六个页面（未完成的页面显示占位提示）
-  - Overview 页面：读取 `Settings` 展示组件卡片，调用 `ChromaStore.get_collection_stats()` 展示数据统计
+  - Overview 页面：读取 `Settings` 展示组件卡片；按 `list_collection_names()` 枚举真实 Chroma 集合再取 stats（不含已删空的空壳）
   - `ConfigService`：封装 Settings 读取，格式化组件配置信息
 - **验收标准**：`streamlit run src/observability/dashboard/app.py` 可启动，总览页展示当前配置信息。
 - **测试方法**：手动运行 `python scripts/start_dashboard.py` 并验证页面渲染。
@@ -3004,8 +3025,8 @@ dashboard:
 - **修改文件**：
   - `src/ingestion/document_manager.py`（新增）
   - `src/libs/vector_store/chroma_store.py`（增强：添加 `delete_by_metadata`）
-  - `src/ingestion/storage/bm25_indexer.py`（增强：添加 `remove_document`）
-  - `src/libs/loader/file_integrity.py`（增强：添加 `remove_record` + `list_processed`）
+  - `src/ingestion/storage/bm25_indexer.py`（增强：`remove_document(..., doc_hash=)` / `drop()`）
+  - `src/libs/loader/file_integrity.py`（增强：`remove_record(file_hash, collection=)` + `list_processed`）
   - `tests/unit/test_document_manager.py`（新增）
 - **实现类/函数**：
   - `DocumentManager.__init__(chroma_store, bm25_indexer, image_storage, file_integrity)`
@@ -3015,7 +3036,9 @@ dashboard:
   - `DocumentManager.get_collection_stats(collection?) -> CollectionStats`
 - **验收标准**：
   - `list_documents` 返回已摄入文档列表（source、chunk 数、图片数）
-  - `delete_document` 协调删除 Chroma + BM25 + ImageStorage + FileIntegrity 四个存储
+  - `delete_document` 协调删除 Chroma + BM25 + ImageStorage + FileIntegrity；Chroma 按 `metadata.source_path` + 目标 collection；BM25 优先 `doc_hash` 前缀匹配
+  - 该集合已无向量时 `delete_collection` 并清理孤儿 UUID 目录；BM25 json 已空则删除文件
+  - 删除后写入 `trace_type=ingestion`、阶段 `deleted` 的 Trace
   - 删除后再次 list 不包含已删除文档
 - **测试方法**：`pytest -q tests/unit/test_document_manager.py`。
 
@@ -3039,8 +3062,8 @@ dashboard:
   - `src/observability/dashboard/pages/ingestion_manager.py`（新增）
 - **实现要点**：
   - 文件上传：`st.file_uploader` 选择文件 + 集合选择
-  - 摄取触发：调用 `IngestionPipeline.run(on_progress=...)` + `st.progress()` 实时进度
-  - 文档删除：在文档列表中提供删除按钮，调用 `DocumentManager.delete_document()`
+  - 摄取触发：`IngestionPipeline.run(path, collection=所选集合, on_progress=...)` — 所选名称同时作为 Chroma collection 与 `bm25/{name}.json`，禁止 yaml 默认集合与 UI 选择分叉
+  - 文档删除：在文档列表中提供删除按钮，调用 `DocumentManager.delete_document(source, collection)`
 - **验收标准**：可在 Dashboard 中上传文件触发摄取、看到实时进度条、删除已有文档。
 - **测试方法**：手动验证（上传 PDF → 观察进度 → 删除 → 确认已移除）。
 
@@ -3054,7 +3077,8 @@ dashboard:
   - 历史列表：按时间倒序展示 `trace_type == "ingestion"` 记录
   - 详情页：横向条形图展示 load/split/transform/embed/upsert 耗时分布
   - `TraceService`：读取 `logs/traces.jsonl`，解析为 Trace 对象列表
-- **验收标准**：执行 ingest 后，Dashboard 显示对应的追踪记录与耗时瀑布图。
+  - 状态推断：成功 / 跳过 / 失败 / **删除**（阶段名 `deleted`） / 进行中
+- **验收标准**：执行 ingest 或删除文档后，Dashboard 显示对应的追踪记录与耗时瀑布图。
 - **测试方法**：手动验证（先 ingest → 打开 Dashboard → 查看追踪）。
 
 ### G6：Query 追踪页面 ✅
