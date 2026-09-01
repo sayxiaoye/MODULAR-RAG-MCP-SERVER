@@ -243,6 +243,10 @@ smart-knowledge-hub/
 │   │   │   ├── base_vision_llm.py       # Vision LLM 抽象基类（支持图像输入）
 │   │   │   └── azure_vision_llm.py      # Azure Vision 实现 (GPT-4o/GPT-4-Vision)
 │   │   │
+│   │   ├── llamacpp/                    # llama-server 进程生命周期（按需启停）
+│   │   │   ├── __init__.py
+│   │   │   └── process_manager.py       # 启动/健康检查/GPU 互斥/空闲关闭
+│   │   │
 │   │   ├── embedding/                   # Embedding 抽象
 │   │   │   ├── __init__.py
 │   │   │   ├── base_embedding.py        # Embedding 抽象基类
@@ -311,15 +315,15 @@ smart-knowledge-hub/
 │   │   └── {collection}/                # 按集合分类（实际存储在 {doc_hash}/ 子目录下）
 │   └── db/                              # 数据库与索引文件目录
 │       ├── ingestion_history.db         # 文件完整性历史记录 (SQLite)
-│       │                                # 表结构：file_hash, file_path, status, processed_at, error_msg
-│       │                                # 用途：增量摄取，避免重复处理未变更文件
+│       │                                # 表结构：PRIMARY KEY (file_hash, collection)，另含 file_path, status, processed_at
+│       │                                # 用途：按集合增量摄取；换集合或该集合向量已空时不跳过
 │       ├── image_index.db               # 图片索引映射 (SQLite)
 │       │                                # 表结构：image_id, file_path, collection, doc_hash, page_num
 │       │                                # 用途：快速查询 image_id → 本地文件路径，支持图片检索与引用
 │       ├── chroma/                      # Chroma 向量库目录
-│       │                                # 存储 Dense Vector、Sparse Vector 与 Chunk Metadata
+│       │                                # 每逻辑集合一个 Chroma collection；delete_collection 后清理孤儿 UUID 段目录
 │       └── bm25/                        # BM25 索引目录
-│                                        # 存储倒排索引与 IDF 统计信息（当前使用 pickle）
+│           └── {collection}.json        # 每逻辑集合一份倒排索引（JSON）；空索引删除文件
 │
 ├── cache/                               # 缓存目录
 │   ├── embeddings/                      # Embedding 缓存 (按内容哈希)
@@ -466,11 +470,11 @@ smart-knowledge-hub/
 原始文档 (PDF)
       │
       ▼
-┌─────────────────┐     未变更则跳过
-│ File Integrity  │───────────────────────────► 结束
+┌─────────────────┐     同 (file_hash, collection) 已 success
+│ File Integrity  │     且该 Chroma 集合仍有 chunk ──► 结束（跳过）
 │   (SHA256)      │
 └────────┬────────┘
-         │ 新文件/已变更
+         │ 新文件 / 换集合 / 该集合向量已空 / --force
          ▼
 ┌─────────────────┐
 │     Loader      │  PDF → Markdown + 图片提取 + 元数据收集
@@ -572,10 +576,13 @@ Dashboard (Streamlit UI)
       │                                                       │
       │    删除文档：                                          │
       │    ├── DocumentManager.delete_document(source, col)   │
-      │    │   ├── ChromaStore.delete_by_metadata(source=...) │
-      │    │   ├── BM25Indexer.remove_document(source=...)    │
+      │    │   ├── ChromaStore.delete_by_metadata(..., col)   │
+      │    │   │   └── 集合已空 → delete_collection + 孤儿 UUID 目录清理 │
+      │    │   ├── BM25Indexer.remove_document(..., doc_hash) │
+      │    │   │   └── 集合已空 → 删除 bm25/{col}.json        │
       │    │   ├── ImageStorage.delete_images(col, doc_hash)  │
-      │    │   └── FileIntegrity.remove_record(file_hash)     │
+      │    │   ├── FileIntegrity.remove_record(hash, col)     │
+      │    │   └── 写入 ingestion Trace（阶段 deleted）       │
       │    └── 刷新文档列表                                    │
       │                                                       │
       └─── Trace 查看 ───────────────────────────────────────┘
@@ -600,12 +607,23 @@ llm:
   model: gpt-4o
   azure_endpoint: "..."
   api_key: "${AZURE_API_KEY}"
+  # 本地 llamacpp 时填写 GGUF：model_path: /path/to/chat.gguf
 
 # Embedding 配置
 embedding:
   provider: openai          # openai | azure | llamacpp | ollama (本地)
   model: text-embedding-3-small
-  
+  # 本地 llamacpp 时填写 GGUF：model_path: /path/to/embed.gguf
+
+# llama-server 按需启停（可选；仅 provider=llamacpp 时生效）
+# 顶层块与 llm/embedding 角色字段合并，角色字段优先。
+llamacpp:
+  auto_manage: true
+  server_bin: "/path/to/llama-server"   # Windows 示例: D:\\llama.cpp\\llama-server.exe
+  exclusive_gpu: true                   # LLM 与 Embedding 互斥，切换时立刻释放 GPU
+  idle_timeout: 8                       # 调用结束后空闲秒数后关闭；0 表示立即关闭
+  startup_timeout: 180
+
 # Vision LLM 配置 (图片描述)
 vision_llm:
   provider: azure           # azure | dashscope (Qwen-VL)

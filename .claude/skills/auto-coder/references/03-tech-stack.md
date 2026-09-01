@@ -27,24 +27,26 @@
 - Loader（统一格式与元数据）
 	- **前置去重 (Early Exit / File Integrity Check)**：
 		- 机制：在解析文件前，计算原始文件的 SHA256 哈希指纹。
-		- 动作：检索 `ingestion_history` 表，若发现相同 Hash 且状态为 `success` 的记录，则认定该文件未发生变更，直接跳过后续所有处理（解析、切分、LLM重写），实现**零成本 (Zero-Cost)** 的增量更新。
+		- 动作：检索 `ingestion_history` 表，若发现**同一 `file_hash` 且同一 `collection`** 且状态为 `success` 的记录，再核对目标 Chroma 集合中是否仍有该文件的 chunk；两者都满足才跳过后续处理。换集合摄入、或该集合向量已删光时必须重新摄取（可用 `--force` 强制重跑）。
 		- **存储方案**（初期实现，可插拔）：
 			- **默认选择：SQLite**，存储于 `data/db/ingestion_history.db`
 			- **表结构**：
 				```sql
 				CREATE TABLE ingestion_history (
-				    file_hash TEXT PRIMARY KEY,
+				    file_hash TEXT NOT NULL,
+				    collection TEXT NOT NULL DEFAULT '',
 				    file_path TEXT NOT NULL,
 				    file_size INTEGER,
 				    status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'processing')),
 				    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 				    error_msg TEXT,
-				    chunk_count INTEGER
+				    chunk_count INTEGER,
+				    PRIMARY KEY (file_hash, collection)
 				);
 				CREATE INDEX idx_status ON ingestion_history(status);
 				CREATE INDEX idx_processed_at ON ingestion_history(processed_at);
 				```
-			- **查询逻辑**：`SELECT status FROM ingestion_history WHERE file_hash = ? AND status = 'success'`
+			- **查询逻辑**：`SELECT status FROM ingestion_history WHERE file_hash = ? AND collection = ?`（仅 `success` 参与跳过）。旧库无 `collection` 列时启动时迁移，历史行 `collection=''`，不挡住具名集合的新摄入。
 			- **替换路径**：后续可升级为 Redis（分布式缓存）或 PostgreSQL（企业级中心化存储）
 	
 	> **📌 持久化存储架构统一说明**
@@ -53,9 +55,9 @@
 	> 
 	> | 存储模块 | 数据库文件 | 用途 | 表结构关键字段 |
 	> |---------|-----------|------|---------------|
-	> | **文件完整性检查** | `data/db/ingestion_history.db` | 记录已处理文件的 SHA256 哈希，实现增量摄取 | `file_hash`, `status`, `processed_at` |
+	> | **文件完整性检查** | `data/db/ingestion_history.db` | 按 `(file_hash, collection)` 记录已处理文件，实现按集合增量摄取 | `file_hash`, `collection`, `status`, `processed_at` |
 	> | **图片索引映射** | `data/db/image_index.db` | 记录 image_id → 文件路径映射，支持图片检索与引用 | `image_id`, `file_path`, `collection` |
-	> | **BM25 索引元数据** | `data/db/bm25/` | 存储倒排索引和 IDF 统计信息（未来可扩展用 SQLite） | 当前使用 pickle，可迁移至 SQLite |
+	> | **BM25 索引** | `data/db/bm25/{collection}.json` | 每逻辑集合一份倒排索引（JSON）；增量摄入须先 load 再 add | `N`, `doc_lengths`, `terms` |
 	> 
 	> **设计优势**：
 	> - **零依赖部署**：无需安装 MySQL/PostgreSQL 等数据库服务，`pip install` 即可运行
@@ -121,11 +123,13 @@
 		- `list_documents(collection?) -> List[DocumentInfo]`：列出已摄入文档及其统计信息（chunk 数、图片数、摄入时间）。
 		- `get_document_detail(doc_id) -> DocumentDetail`：获取单个文档的详细信息（所有 chunk 内容、metadata、关联图片）。
 		- `delete_document(source_path, collection) -> DeleteResult`：协调删除跨 4 个存储的关联数据：
-			1. **Chroma** — 按 `metadata.source` 删除所有 chunk 向量
-			2. **BM25 Indexer** — 移除对应文档的倒排索引条目
+			1. **Chroma** — 按 `metadata.source_path` + 目标 collection 删除 chunk；该集合已无向量时 `delete_collection`，并清理 persist 目录中 sqlite 不再引用的 UUID 段目录
+			2. **BM25 Indexer** — `remove_document(source, chunk_ids=..., doc_hash=...)`（Chroma 稳定 id 与 Sparse `{doc_hash}_{index}_…` 不一致时靠 doc_hash 前缀清 posting）；集合已空则删除 `bm25/{collection}.json`
 			3. **ImageStorage** — 删除该文档关联的所有图片文件
-			4. **FileIntegrity** — 移除处理记录，使文件可重新摄入
-		- `get_collection_stats(collection?) -> CollectionStats`：返回集合级统计（文档数、chunk 数、存储大小等）。
+			4. **FileIntegrity** — `remove_record(file_hash, collection=...)`，使该集合可重新摄入
+			5. **Trace** — 追加一条 `trace_type=ingestion`、阶段名为 `deleted` 的记录，Dashboard 状态显示「删除」
+		- **集合路由**：一个逻辑集合 = 一个 Chroma collection + `data/db/bm25/{name}.json`。`BaseVectorStore` 的 upsert/query/get/delete 均接受 `collection=`；`list_collection_names()` / `delete_collection()` 管理空壳集合。Dense 检索把 `filters["collection"]` 解释为 Chroma 集合名，其余条件仍作 metadata where。
+		- `get_collection_stats(collection?) -> CollectionStats`：返回集合级统计（文档数、chunk 数、图片数等）。
 
 	- **Pipeline 进度回调 (Progress Callback)**：在 `IngestionPipeline.run()` 方法中新增可选 `on_progress` 参数：
 		```python
@@ -135,11 +139,12 @@
 		- 回调签名：`on_progress(stage_name: str, current: int, total: int)`
 		- 各阶段（load / split / transform / embed / upsert）在处理每个 batch 时调用回调，Dashboard 据此展示实时进度条。
 		- `on_progress` 为 `None` 时行为与当前完全一致，不影响 CLI 和测试场景。
+		- **BM25 增量写入**：`_run_store` 对目标集合先 `BM25Indexer.load()`（文件不存在则空索引），再 `add` 当前文档，再 `save`。禁止每次新建空索引覆盖 `{collection}.json`。
 
 	- **存储层接口扩展**：为支持 DocumentManager 的删除操作，需扩展以下存储接口：
-		- `BaseVectorStore` 新增 `delete_by_metadata(filter: dict) -> int` — 按 metadata 条件批量删除
-		- `BM25Indexer` 新增 `remove_document(source: str) -> None` — 移除指定文档的索引条目
-		- `FileIntegrityChecker` 新增 `remove_record(file_hash: str) -> None` 和 `list_processed() -> List[dict]`
+		- `BaseVectorStore`：`delete_by_metadata(filter, collection=) -> int`；`list_collection_names() -> list[str]`；`delete_collection(name)`（含孤儿 UUID 目录清理）
+		- `BM25Indexer`：`remove_document(source, chunk_ids=None, *, doc_hash=None)`；`drop()` 清空并删除 json；`save()` 在 N=0 时删除文件
+		- `FileIntegrityChecker`：`should_skip(file_hash, collection=None)`；`mark_success(..., collection=None)`；`remove_record(file_hash, collection=None)`；`list_processed()`
 
 #### 3.1.2 检索流水线
 
@@ -312,11 +317,12 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 | **Azure OpenAI** | 企业合规、私有云部署、区域数据驻留 | `provider: azure`, `endpoint`, `api_key`, `deployment_name` |
 | **OpenAI 原生** | 通用开发、最新模型尝鲜 | `provider: openai`, `api_key`, `model` |
 | **DeepSeek / 其他云端** | 成本优化、特定语言优化 | `provider: deepseek`, `api_key`, `model` |
-| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API | `provider: llamacpp`, `base_url` (`:8080/v1`), `model` |
+| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API；可按需启停 llama-server 释放 GPU | `provider: llamacpp`, `base_url`（LLM `:8080/v1` / Embedding `:8081/v1`）, `model`, `model_path`；共享块 `llamacpp.server_bin` / `auto_manage` / `exclusive_gpu` / `idle_timeout` |
 | **Ollama / vLLM (本地)** | 完全离线、隐私敏感、无 API 成本 | `provider: ollama`, `base_url`, `model` |
 
 - **技术选型建议**：
 	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、LlamaCpp、Ollama、DeepSeek 五种 Provider 适配。
+	- **LlamaCpp 进程生命周期**（`src/libs/llamacpp/process_manager.py`）：`LlamaCppLLM` / `LlamaCppEmbedding` 在 HTTP 调用前后经 `run_with_server()` 接入。`auto_manage` 开启且配置了 `server_bin` + `model_path` 时，按需 `Popen` 拉起 `llama-server`，探测 `/v1/models` 就绪；`exclusive_gpu`（默认 true）保证同一时刻只驻留一个角色（切换时 `_stop_other_roles`）；`idle_timeout` 秒空闲后关闭自管进程释放 GPU。已在端口上健康运行的外部 llama-server 只复用、不接管、不误杀。
 	- 对于其他 Provider，可通过 **OpenAI-Compatible 模式**接入（设置自定义 `api_base`），或实现 `BaseLLM` 接口并在工厂中注册。
 
 	- 对于企业级需求，可在其基础上增加统一的 **重试、限流、日志** 中间层，提升生产可靠性，但本项目暂不实现，这里仅提供思路。
@@ -602,7 +608,7 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - Splitter：类型 + chunk_size + overlap
     - Reranker：backend + model（或 None）
     - Evaluator：已启用的 backends 列表
-- **数据资产统计**：调用 `DocumentManager.get_collection_stats()` 展示各集合的文档数、chunk 数、图片数。
+- **数据资产统计**：调用 `DocumentManager.get_collection_stats()` / `ChromaStore.list_collection_names()` 展示各集合的文档数、chunk 数、图片数；下拉仅列出仍有向量的集合（删空后 `delete_collection`，不残留空壳）。
 - **系统健康指标**：最近一次 Ingestion/Query trace 的时间与耗时。
 
 **页面 2：数据浏览器 (Data Browser)**
@@ -621,12 +627,12 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - 利用 `on_progress` 回调驱动 Streamlit 进度条（`st.progress`），实时显示当前阶段与处理进度
 - **文档删除**：
     - 在文档列表中提供"删除"按钮
-    - 调用 `DocumentManager.delete_document()` 协调跨存储删除
-    - 删除完成后刷新列表
+    - 调用 `DocumentManager.delete_document()` 协调跨存储删除（含空集合 drop 与 BM25 json 清理）
+    - 删除完成后刷新列表，并在 Ingestion 追踪中出现状态「删除」
 - **注意**：Pipeline 执行为同步阻塞操作，Streamlit 的 rerun 机制天然支持（进度条在同一 request 中更新）。
 
 **页面 4：Ingestion 追踪 (Ingestion Traces)**
-- **摄取历史列表**：按时间倒序展示 `trace_type == "ingestion"` 的历史记录，显示文件名、集合、总耗时、状态（成功/失败）。
+- **摄取历史列表**：按时间倒序展示 `trace_type == "ingestion"` 的历史记录，显示文件名、集合、总耗时、状态（成功 / 跳过 / 失败 / 删除 / 进行中）。
 - **单次摄取详情**：
     - **阶段耗时瀑布图**：横向条形图展示 load/split/transform/embed/upsert 各阶段时间分布。
     - **处理统计**：chunk 数、图片数、跳过数、失败数。

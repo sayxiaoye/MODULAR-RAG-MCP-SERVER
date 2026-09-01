@@ -1,6 +1,10 @@
 # Modular RAG MCP Server — minimal configuration (expanded in A3)
 # Local inference uses llama.cpp (llama-server) via provider: llamacpp.
 # Config reference: .github/skills/setup/references/provider_profiles.md
+#
+# 按需启停：配置 llamacpp.server_bin + 各角色 model_path 后，系统会在调用时
+# 自动拉起 llama-server，空闲 idle_timeout 秒后关闭以释放 GPU。
+# 无需再手动开两个 terminal。请先关掉已在运行的 llama-server，避免端口占用。
 
 llm:
   provider: llamacpp
@@ -8,12 +12,22 @@ llm:
   base_url: "http://localhost:8080/v1"
   temperature: 0.0
   max_tokens: 4096
+  model_path: "D:\\AI_Models\\01-General_Chat\\7-12B_Mainstream\\qwen2.5-7b-instruct-q6_k-00001-of-00002.gguf"
 
 embedding:
   provider: llamacpp
   model: bge-m3
   base_url: "http://localhost:8081/v1"
   dimensions: 1024
+  model_path: "D:\\AI_Models\\07-Embedding_RAG\\Chinese_English_Embeddings\\bge-m3-q4_k_m.gguf"
+
+# llama-server 共享运行时：LLM 与 Embedding 默认互斥，同一时刻只加载一个模型
+llamacpp:
+  auto_manage: true
+  server_bin: "D:\\llama.cpp\\llama-b10488-bin-win-cuda-13.3-x64\\llama-server.exe"
+  exclusive_gpu: true          # 切换角色时立即关掉另一个，避免双模型占满显存
+  idle_timeout: 8              # 调用结束后空闲秒数后关闭；0 表示立即关闭
+  startup_timeout: 180         # 等待模型加载的最长秒数
 
 vector_store:
   provider: chroma

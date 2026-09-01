@@ -22,6 +22,13 @@ class TestLoadSettings:
         assert settings.embedding.provider == "llamacpp"
         assert settings.vector_store.provider == "chroma"
         assert settings.retrieval.rrf_k == 60
+        assert settings.llm.auto_manage is True
+        assert settings.embedding.auto_manage is True
+        assert settings.llm.server_bin is not None
+        assert settings.llm.model_path is not None
+        assert settings.embedding.model_path is not None
+        assert settings.llm.idle_timeout == 8.0
+        assert settings.llm.exclusive_gpu is True
 
 
 @pytest.mark.unit
@@ -124,3 +131,66 @@ class TestLoadSettingsFromFile:
         settings = load_settings(yaml_path)
         assert settings.llm.provider == "openai"
         assert settings.embedding.dimensions == 1536
+        assert settings.llm.server_bin is None
+        assert settings.llm.auto_manage is None
+
+    def test_llamacpp_runtime_block_merges_into_roles(self, tmp_path: Path) -> None:
+        """顶层 llamacpp 块应合并进 llm/embedding，角色字段优先。"""
+        content = textwrap.dedent(
+            """
+            llm:
+              provider: llamacpp
+              model: qwen
+              temperature: 0.0
+              max_tokens: 128
+              model_path: "D:\\\\models\\\\chat.gguf"
+              extra_args: ["--alias", "qwen"]
+            embedding:
+              provider: llamacpp
+              model: bge
+              dimensions: 1024
+              model_path: "D:\\\\models\\\\embed.gguf"
+            vector_store:
+              provider: chroma
+              persist_directory: "./data/db/chroma"
+              collection_name: test
+            retrieval:
+              dense_top_k: 10
+              sparse_top_k: 10
+              fusion_top_k: 5
+              rrf_k: 60
+            rerank:
+              enabled: false
+              provider: none
+              model: none
+              top_k: 5
+            evaluation:
+              enabled: false
+              provider: custom
+              metrics: [hit_rate]
+            observability:
+              log_level: INFO
+              trace_enabled: true
+              trace_file: "./logs/traces.jsonl"
+              structured_logging: true
+            llamacpp:
+              auto_manage: true
+              server_bin: "D:\\\\llama\\\\llama-server.exe"
+              exclusive_gpu: true
+              idle_timeout: 0
+              startup_timeout: 60
+            """
+        )
+        yaml_path = tmp_path / "llamacpp.yaml"
+        yaml_path.write_text(content, encoding="utf-8")
+        settings = load_settings(yaml_path)
+        assert settings.llm.server_bin == r"D:\llama\llama-server.exe"
+        assert settings.embedding.server_bin == r"D:\llama\llama-server.exe"
+        assert settings.llm.model_path == r"D:\models\chat.gguf"
+        assert settings.embedding.model_path == r"D:\models\embed.gguf"
+        assert settings.llm.extra_args == ("--alias", "qwen")
+        assert settings.embedding.extra_args == ()
+        assert settings.llm.auto_manage is True
+        assert settings.llm.idle_timeout == 0.0
+        assert settings.llm.exclusive_gpu is True
+

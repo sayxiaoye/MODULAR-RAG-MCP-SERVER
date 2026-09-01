@@ -107,6 +107,78 @@ def _require_list(data: Dict[str, Any], key: str, path: str) -> List[Any]:
     return value
 
 
+def _optional_str(data: Dict[str, Any], key: str, path: str) -> Optional[str]:
+    """可选非空字符串；缺省或空串视为 None。"""
+    if key not in data or data.get(key) is None:
+        return None
+    value = data[key]
+    if not isinstance(value, str):
+        raise SettingsError(f"Expected string for field: {path}.{key}")
+    stripped = value.strip()
+    return stripped or None
+
+
+def _optional_bool(data: Dict[str, Any], key: str, path: str) -> Optional[bool]:
+    """可选布尔；缺省返回 None，便于「未配置则按路径推断」。"""
+    if key not in data or data.get(key) is None:
+        return None
+    value = data[key]
+    if not isinstance(value, bool):
+        raise SettingsError(f"Expected boolean for field: {path}.{key}")
+    return value
+
+
+def _optional_number(data: Dict[str, Any], key: str, path: str) -> Optional[float]:
+    """可选数值；缺省返回 None。"""
+    if key not in data or data.get(key) is None:
+        return None
+    value = data[key]
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise SettingsError(f"Expected number for field: {path}.{key}")
+    return float(value)
+
+
+def _optional_str_tuple(data: Dict[str, Any], key: str, path: str) -> tuple[str, ...]:
+    """可选字符串列表，解析为不可变 tuple；缺省为空 tuple。"""
+    if key not in data or data.get(key) is None:
+        return ()
+    value = data[key]
+    if not isinstance(value, list):
+        raise SettingsError(f"Expected list for field: {path}.{key}")
+    return tuple(str(item) for item in value)
+
+
+def _llamacpp_runtime_block(data: Dict[str, Any]) -> Dict[str, Any]:
+    """读取可选的顶层 ``llamacpp`` 块，供 LLM/Embedding 共享 server_bin 等字段。"""
+    raw = data.get("llamacpp")
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise SettingsError("Expected mapping for field: settings.llamacpp")
+    return raw
+
+
+def _merge_llamacpp_fields(
+    block: Dict[str, Any],
+    runtime: Dict[str, Any],
+    path: str,
+) -> Dict[str, Any]:
+    """将角色配置与共享 ``llamacpp`` 块合并；角色字段优先。"""
+    merged = dict(runtime)
+    for key, value in block.items():
+        if value is not None:
+            merged[key] = value
+    return {
+        "server_bin": _optional_str(merged, "server_bin", path),
+        "model_path": _optional_str(merged, "model_path", path),
+        "extra_args": _optional_str_tuple(merged, "extra_args", path),
+        "auto_manage": _optional_bool(merged, "auto_manage", path),
+        "idle_timeout": _optional_number(merged, "idle_timeout", path),
+        "startup_timeout": _optional_number(merged, "startup_timeout", path),
+        "exclusive_gpu": _optional_bool(merged, "exclusive_gpu", path),
+    }
+
+
 @dataclass(frozen=True)
 class LLMSettings:
     """大语言模型（LLM）配置，对应 settings.yaml 的 ``llm`` 块。"""
@@ -120,8 +192,16 @@ class LLMSettings:
     api_version: Optional[str] = None
     azure_endpoint: Optional[str] = None
     deployment_name: Optional[str] = None
-    # Ollama-specific optional fields
+    # Ollama / LlamaCpp HTTP 端点
     base_url: Optional[str] = None
+    # llama-server 按需启停（仅 provider=llamacpp 时使用）
+    server_bin: Optional[str] = None
+    model_path: Optional[str] = None
+    extra_args: tuple[str, ...] = ()
+    auto_manage: Optional[bool] = None
+    idle_timeout: Optional[float] = None
+    startup_timeout: Optional[float] = None
+    exclusive_gpu: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -136,8 +216,16 @@ class EmbeddingSettings:
     api_version: Optional[str] = None
     azure_endpoint: Optional[str] = None
     deployment_name: Optional[str] = None
-    # Ollama-specific optional fields
+    # Ollama / LlamaCpp HTTP 端点
     base_url: Optional[str] = None
+    # llama-server 按需启停（仅 provider=llamacpp 时使用）
+    server_bin: Optional[str] = None
+    model_path: Optional[str] = None
+    extra_args: tuple[str, ...] = ()
+    auto_manage: Optional[bool] = None
+    idle_timeout: Optional[float] = None
+    startup_timeout: Optional[float] = None
+    exclusive_gpu: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -259,6 +347,10 @@ class Settings:
         rerank = _require_mapping(data, "rerank", "settings")
         evaluation = _require_mapping(data, "evaluation", "settings")
         observability = _require_mapping(data, "observability", "settings")
+        # 可选：llama-server 共享运行时（server_bin / idle_timeout 等），合并进 llm/embedding
+        llamacpp_runtime = _llamacpp_runtime_block(data)
+        llm_llamacpp = _merge_llamacpp_fields(llm, llamacpp_runtime, "llm")
+        embedding_llamacpp = _merge_llamacpp_fields(embedding, llamacpp_runtime, "embedding")
 
         # 可选：文档入库配置
         ingestion_settings = None
@@ -300,6 +392,13 @@ class Settings:
                 azure_endpoint=llm.get("azure_endpoint"),
                 deployment_name=llm.get("deployment_name"),
                 base_url=llm.get("base_url"),
+                server_bin=llm_llamacpp["server_bin"],
+                model_path=llm_llamacpp["model_path"],
+                extra_args=llm_llamacpp["extra_args"],
+                auto_manage=llm_llamacpp["auto_manage"],
+                idle_timeout=llm_llamacpp["idle_timeout"],
+                startup_timeout=llm_llamacpp["startup_timeout"],
+                exclusive_gpu=llm_llamacpp["exclusive_gpu"],
             ),
             embedding=EmbeddingSettings(
                 provider=_require_str(embedding, "provider", "embedding"),
@@ -310,6 +409,13 @@ class Settings:
                 azure_endpoint=embedding.get("azure_endpoint"),
                 deployment_name=embedding.get("deployment_name"),
                 base_url=embedding.get("base_url"),
+                server_bin=embedding_llamacpp["server_bin"],
+                model_path=embedding_llamacpp["model_path"],
+                extra_args=embedding_llamacpp["extra_args"],
+                auto_manage=embedding_llamacpp["auto_manage"],
+                idle_timeout=embedding_llamacpp["idle_timeout"],
+                startup_timeout=embedding_llamacpp["startup_timeout"],
+                exclusive_gpu=embedding_llamacpp["exclusive_gpu"],
             ),
             vector_store=VectorStoreSettings(
                 provider=_require_str(vector_store, "provider", "vector_store"),

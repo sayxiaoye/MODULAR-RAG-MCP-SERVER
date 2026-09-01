@@ -20,7 +20,7 @@
     - 核心推理 LLM 通过统一的抽象接口封装，支持**多协议**无缝切换：
         - **Azure OpenAI**：企业级 Azure 云端服务，符合合规与安全要求；
         - **OpenAI API**：直接对接 OpenAI 官方接口；
-        - **本地模型**：首选 **llama.cpp**（`llama-server`，`provider: llamacpp`）；亦支持 Ollama（legacy）、vLLM、LM Studio 等；
+        - **本地模型**：首选 **llama.cpp**（`llama-server`，`provider: llamacpp`）；配置 `llamacpp.auto_manage` 后按需拉起进程、空闲关闭并 GPU 互斥（LLM 与 Embedding 不同时驻留），无需手动常驻两个 terminal；亦支持 Ollama（legacy）、vLLM、LM Studio 等；
         - **其他云服务**：DeepSeek、Anthropic Claude 等第三方 API。
     - 通过配置文件一键切换后端，**零代码修改**即可完成 LLM 迁移，便于成本优化、隐私合规或 A/B 测试。
 

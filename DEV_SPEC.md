@@ -83,7 +83,7 @@
     - 核心推理 LLM 通过统一的抽象接口封装，支持**多协议**无缝切换：
         - **Azure OpenAI**：企业级 Azure 云端服务，符合合规与安全要求；
         - **OpenAI API**：直接对接 OpenAI 官方接口；
-        - **本地模型**：首选 **llama.cpp**（`llama-server`，`provider: llamacpp`）；亦支持 Ollama（legacy）、vLLM、LM Studio 等；
+        - **本地模型**：首选 **llama.cpp**（`llama-server`，`provider: llamacpp`）；配置 `llamacpp.auto_manage` 后按需拉起进程、空闲关闭并 GPU 互斥（LLM 与 Embedding 不同时驻留），无需手动常驻两个 terminal；亦支持 Ollama（legacy）、vLLM、LM Studio 等；
         - **其他云服务**：DeepSeek、Anthropic Claude 等第三方 API。
     - 通过配置文件一键切换后端，**零代码修改**即可完成 LLM 迁移，便于成本优化、隐私合规或 A/B 测试。
 
@@ -485,11 +485,12 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 | **Azure OpenAI** | 企业合规、私有云部署、区域数据驻留 | `provider: azure`, `endpoint`, `api_key`, `deployment_name` |
 | **OpenAI 原生** | 通用开发、最新模型尝鲜 | `provider: openai`, `api_key`, `model` |
 | **DeepSeek / 其他云端** | 成本优化、特定语言优化 | `provider: deepseek`, `api_key`, `model` |
-| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API | `provider: llamacpp`, `base_url` (`:8080/v1`), `model` |
+| **LlamaCpp (本地，推荐)** | 完全离线、直接运行 GGUF、OpenAI 兼容 API；可按需启停 llama-server 释放 GPU | `provider: llamacpp`, `base_url`（LLM `:8080/v1` / Embedding `:8081/v1`）, `model`, `model_path`；共享块 `llamacpp.server_bin` / `auto_manage` / `exclusive_gpu` / `idle_timeout` |
 | **Ollama / vLLM (本地)** | 完全离线、隐私敏感、无 API 成本 | `provider: ollama`, `base_url`, `model` |
 
 - **技术选型建议**：
 	- 本项目采用自研的 `BaseLLM` / `BaseEmbedding` 抽象基类，配合工厂模式（`llm_factory.py` / `embedding_factory.py`）实现统一调用接口。已内置 Azure OpenAI、OpenAI、LlamaCpp、Ollama、DeepSeek 五种 Provider 适配。
+	- **LlamaCpp 进程生命周期**（`src/libs/llamacpp/process_manager.py`）：`LlamaCppLLM` / `LlamaCppEmbedding` 在 HTTP 调用前后经 `run_with_server()` 接入。`auto_manage` 开启且配置了 `server_bin` + `model_path` 时，按需 `Popen` 拉起 `llama-server`，探测 `/v1/models` 就绪；`exclusive_gpu`（默认 true）保证同一时刻只驻留一个角色（切换时 `_stop_other_roles`）；`idle_timeout` 秒空闲后关闭自管进程释放 GPU。已在端口上健康运行的外部 llama-server 只复用、不接管、不误杀。
 	- 对于其他 Provider，可通过 **OpenAI-Compatible 模式**接入（设置自定义 `api_base`），或实现 `BaseLLM` 接口并在工厂中注册。
 
 	- 对于企业级需求，可在其基础上增加统一的 **重试、限流、日志** 中间层，提升生产可靠性，但本项目暂不实现，这里仅提供思路。
@@ -1506,6 +1507,10 @@ smart-knowledge-hub/
 │   │   │   ├── base_vision_llm.py       # Vision LLM 抽象基类（支持图像输入）
 │   │   │   └── azure_vision_llm.py      # Azure Vision 实现 (GPT-4o/GPT-4-Vision)
 │   │   │
+│   │   ├── llamacpp/                    # llama-server 进程生命周期（按需启停）
+│   │   │   ├── __init__.py
+│   │   │   └── process_manager.py       # 启动/健康检查/GPU 互斥/空闲关闭
+│   │   │
 │   │   ├── embedding/                   # Embedding 抽象
 │   │   │   ├── __init__.py
 │   │   │   ├── base_embedding.py        # Embedding 抽象基类
@@ -1866,12 +1871,23 @@ llm:
   model: gpt-4o
   azure_endpoint: "..."
   api_key: "${AZURE_API_KEY}"
+  # 本地 llamacpp 时填写 GGUF：model_path: /path/to/chat.gguf
 
 # Embedding 配置
 embedding:
   provider: openai          # openai | azure | llamacpp | ollama (本地)
   model: text-embedding-3-small
-  
+  # 本地 llamacpp 时填写 GGUF：model_path: /path/to/embed.gguf
+
+# llama-server 按需启停（可选；仅 provider=llamacpp 时生效）
+# 顶层块与 llm/embedding 角色字段合并，角色字段优先。
+llamacpp:
+  auto_manage: true
+  server_bin: "/path/to/llama-server"   # Windows 示例: D:\\llama.cpp\\llama-server.exe
+  exclusive_gpu: true                   # LLM 与 Embedding 互斥，切换时立刻释放 GPU
+  idle_timeout: 8                       # 调用结束后空闲秒数后关闭；0 表示立即关闭
+  startup_timeout: 180
+
 # Vision LLM 配置 (图片描述)
 vision_llm:
   provider: azure           # azure | dashscope (Qwen-VL)
@@ -1991,6 +2007,7 @@ dashboard:
 | B7.8 | Cross-Encoder Reranker 实现 | [x] | 2026-08-08 | CrossEncoderReranker + mock scorer + 6个单元测试 |
 | B7.9 | LlamaCpp LLM 实现 | [x] | 2026-08-19 | LlamaCppLLM + 工厂注册 + 4个单元测试 |
 | B7.10 | LlamaCpp Embedding 实现 | [x] | 2026-08-19 | LlamaCppEmbedding + 工厂注册 + 5个单元测试 |
+| B7.11 | LlamaCpp 按需启停与 GPU 互斥 | [x] | 2026-09-01 | LlamaCppProcessManager + settings 合并 + 11个单元测试 |
 | B8 | Vision LLM 抽象接口与工厂集成 | [x] | 2026-08-08 | BaseVisionLLM + create_vision_llm + 7个单元测试 |
 | B9 | Azure Vision LLM 实现 | [x] | 2026-08-08 | AzureVisionLLM + 图片压缩 + 6个单元测试 |
 
@@ -2085,7 +2102,7 @@ dashboard:
 | 阶段 | 总任务数 | 已完成 | 进度 |
 |------|---------|--------|------|
 | 阶段 A | 3 | 3 | 100% |
-| 阶段 B | 18 | 18 | 100% |
+| 阶段 B | 19 | 19 | 100% |
 | 阶段 C | 15 | 15 | 100% |
 | 阶段 D | 7 | 7 | 100% |
 | 阶段 E | 6 | 6 | 100% |
@@ -2093,7 +2110,7 @@ dashboard:
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 0 | 0% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **70** | **60** | **86%** |
+| **总计** | **71** | **61** | **86%** |
 
 
 ---
@@ -2142,7 +2159,7 @@ dashboard:
   - `main.py`（启动时调用 `load_settings()`，缺字段直接 fail-fast 退出）
   - `src/observability/logger.py`（先占位：提供 get_logger，stderr 输出）
   - `src/core/settings.py`（新增：集中放 Settings 数据结构与加载/校验逻辑）
-  - `config/settings.yaml`（补齐字段：llm/embedding/vector_store/retrieval/rerank/evaluation/observability）
+  - `config/settings.yaml`（补齐字段：llm/embedding/vector_store/retrieval/rerank/evaluation/observability；B7.11 起可选顶层 `llamacpp` 块与角色 `model_path` / `server_bin`）
   - `tests/unit/test_config_loading.py`
 - **实现类/函数**：
   - `Settings`（dataclass：只做结构与最小校验；不在这里做任何网络/IO 的“业务初始化”）
@@ -2357,6 +2374,32 @@ dashboard:
   - 支持批量 `embed(texts)`；`dimensions` 与模型一致；若服务端不支持 `dimensions` 则不传该字段。
   - 换模型后需清空 Chroma 并重跑 ingestion。
 - **测试方法**：`pytest -q tests/unit/test_llamacpp_embedding.py`。
+
+### B7.11：LlamaCpp 按需启停与 GPU 互斥 ✅
+- **目标**：本地 `provider: llamacpp` 时不必手动常驻两个 `llama-server`。推理前按需拉起，调用结束后按空闲超时关闭以释放 GPU；LLM 与 Embedding 默认互斥，避免双 GGUF 同时占满显存。
+- **背景**：B7.9 / B7.10 仅通过 HTTP 调用已运行的 llama-server。单卡场景下聊天模型与 embedding 模型无法同时驻留，用户需开两个 terminal 且 GPU 一直满负荷。
+- **修改文件**：
+  - `src/libs/llamacpp/process_manager.py`（`LlamaCppProcessManager`：`ensure_ready` / `release` / `_stop_other_roles` / `run_with_server`）
+  - `src/libs/llamacpp/__init__.py`
+  - `src/libs/llm/llamacpp_llm.py`（`chat()` 经 `run_with_server` 包装）
+  - `src/libs/embedding/llamacpp_embedding.py`（`embed()` 经 `run_with_server` 包装）
+  - `src/core/settings.py`（可选顶层 `llamacpp` 块合并进 `LLMSettings` / `EmbeddingSettings`：`server_bin`、`model_path`、`auto_manage`、`exclusive_gpu`、`idle_timeout`、`startup_timeout`、`extra_args`）
+  - `config/settings.yaml`（默认启用 `auto_manage`，填写本机 `server_bin` 与各角色 `model_path`）
+  - `tests/unit/test_llamacpp_process_manager.py`（mock 子进程，不启动真实 llama-server）
+  - `tests/unit/test_config_loading.py`（共享块合并与默认配置断言）
+- **实现类/函数**：
+  - `LlamaCppLaunchConfig`：角色、可执行文件、GGUF、host/port、idle/startup 超时、`exclusive_gpu`
+  - `LlamaCppProcessManager.ensure_ready(config)`：`exclusive_gpu` 时先 `_stop_other_roles`；端口已有健康服务则复用且 `owned=False`；否则 `Popen` 并轮询 `/v1/models`
+  - `LlamaCppProcessManager.release(config)`：引用计数归零后按 `idle_timeout` 关闭**自管**进程（外部进程不杀）
+  - `launch_config_from_llm` / `launch_config_from_embedding`：未启用按需启停时返回 `None`（保持 B7.9/B7.10 手动启动行为）
+  - Embedding 角色自动补 `--embedding`；`--alias` 默认取 `settings.model`
+- **验收标准**：
+  - 配置 `server_bin` + `model_path`（或 `auto_manage: true`）后，无需手动启动 llama-server 即可完成 embed / chat。
+  - `exclusive_gpu=true` 时启动 LLM 会立刻关掉自管 Embedding 进程（反之亦然）。
+  - `idle_timeout=0` 时本次调用结束后立即释放；`>0` 时空闲到期再关，连续入库批次可复用同一进程。
+  - 端口上已有健康的外部 llama-server 时不 `Popen`、不 `taskkill`。
+  - 未配置路径时行为与 B7.9/B7.10 一致（仅 HTTP 调用，连接失败提示启动命令）。
+- **测试方法**：`pytest -q tests/unit/test_llamacpp_process_manager.py tests/unit/test_config_loading.py`。
 
 ### B8：Vision LLM 抽象接口与工厂集成 ✅
 - **目标**：定义 `BaseVisionLLM` 抽象接口，扩展 `LLMFactory` 支持 Vision LLM 创建，为 C7 的 ImageCaptioner 提供底层抽象。
