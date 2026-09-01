@@ -88,7 +88,10 @@ class BM25Indexer:
         self._recompute_metadata()
 
     def save(self) -> None:
-        """将索引序列化到 data/db/bm25/{collection}.json。"""
+        """将索引序列化到 data/db/bm25/{collection}.json；集合已空则删除文件。"""
+        if self._document_count <= 0:
+            self.drop()
+            return
         self.index_root.mkdir(parents=True, exist_ok=True)
         payload = {
             "collection": self.collection,
@@ -101,6 +104,12 @@ class BM25Indexer:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def drop(self) -> None:
+        """清空内存索引并删除磁盘上的集合文件。"""
+        self._clear()
+        if self._index_path.is_file():
+            self._index_path.unlink()
 
     def load(self) -> None:
         """从磁盘加载索引。"""
@@ -166,19 +175,32 @@ class BM25Indexer:
         ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
         return ranked[:top_k]
 
-    def remove_document(self, source: str, chunk_ids: Sequence[str] | None = None) -> None:
+    def remove_document(
+        self,
+        source: str,
+        chunk_ids: Sequence[str] | None = None,
+        *,
+        doc_hash: str | None = None,
+    ) -> None:
         """
         移除指定文档的倒排条目。
 
         Args:
-            source: 文档 source_path；若未提供 chunk_ids，则删除 chunk_id 等于 source 的条目。
-            chunk_ids: 可选，由 DocumentManager 从向量库查出的该文档 chunk 列表。
+            source: 文档 source_path；若未提供 chunk_ids / doc_hash，则删除 chunk_id 等于 source 的条目。
+            chunk_ids: 可选，向量库中的 chunk id（可能与稀疏 id 不同）。
+            doc_hash: 可选文件哈希。SparseEncoder 使用 ``{doc_hash}_{index}_...``，
+                与 Chroma 稳定 id 不一致时靠此前缀清掉该文档全部 posting。
         """
         if not source or not str(source).strip():
             raise BM25IndexerError("source 不能为空")
-        ids = [str(item).strip() for item in (chunk_ids or []) if str(item).strip()]
+        ids = {str(item).strip() for item in (chunk_ids or []) if str(item).strip()}
+        prefix = doc_hash.strip() if isinstance(doc_hash, str) and doc_hash.strip() else ""
+        if prefix:
+            for chunk_id in list(self._doc_lengths):
+                if chunk_id == prefix or chunk_id.startswith(f"{prefix}_"):
+                    ids.add(chunk_id)
         if not ids:
-            ids = [str(source).strip()]
+            ids = {str(source).strip()}
         for chunk_id in ids:
             self._remove_chunk(chunk_id)
         self._recompute_metadata()

@@ -58,10 +58,12 @@ class TraceRecord:
 
     @property
     def status(self) -> str:
-        """根据阶段名与 finish 状态推断成功 / 失败 / 跳过。"""
+        """根据阶段名与 finish 状态推断成功 / 失败 / 跳过 / 删除。"""
         names = {item.name for item in self.stages}
         if "error" in names:
             return "失败"
+        if "deleted" in names:
+            return "删除"
         if "skipped" in names:
             return "跳过"
         if self.finished_at:
@@ -86,7 +88,7 @@ class TraceRecord:
 
     @property
     def chunk_count(self) -> int:
-        for name in ("pipeline_complete", "split", "embed", "upsert"):
+        for name in ("pipeline_complete", "deleted", "split", "embed", "upsert"):
             for stage in reversed(self.stages):
                 if stage.name != name:
                     continue

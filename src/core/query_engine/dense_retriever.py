@@ -70,14 +70,18 @@ class DenseRetriever:
 
         query_vector = vectors[0]
         embed_ms = (time.perf_counter() - start) * 1000
+        collection_name, chroma_filters = _split_collection_filter(
+            filters, self._settings.vector_store.collection_name
+        )
 
         start = time.perf_counter()
         try:
             raw_results = self._vector_store.query(
                 query_vector,
                 top_k,
-                filters=filters,
+                filters=chroma_filters,
                 trace=trace,
+                collection=collection_name,
             )
         except VectorStoreError as exc:
             raise DenseRetrieverError(f"向量库检索失败: {exc}") from exc
@@ -103,3 +107,18 @@ def _normalize_result(item: Mapping[str, Any]) -> RetrievalResult:
         return RetrievalResult.from_dict(item)
     except Exception as exc:
         raise DenseRetrieverError(f"检索结果契约非法: {exc}") from exc
+
+
+def _split_collection_filter(
+    filters: Mapping[str, Any] | None,
+    default_collection: str,
+) -> tuple[str, dict[str, Any] | None]:
+    """filters.collection 表示逻辑集合（Chroma collection 名），其余仍作 metadata where。"""
+    default = (default_collection or "").strip()
+    if not filters:
+        return default, None
+    remaining = dict(filters)
+    raw = remaining.pop("collection", None)
+    name = str(raw).strip() if isinstance(raw, str) and raw.strip() else default
+    return name, remaining or None
+

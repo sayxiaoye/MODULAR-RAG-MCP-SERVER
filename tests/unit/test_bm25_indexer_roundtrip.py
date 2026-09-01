@@ -89,3 +89,21 @@ class TestBM25IndexerRoundtrip:
         indexer = BM25Indexer(collection="empty", index_root=tmp_path)
         indexer.build([], rebuild=True)
         assert indexer.query("anything") == []
+
+    def test_new_indexer_load_then_add_preserves_previous_chunks(self, tmp_path) -> None:
+        """第二次打开同一 json 应先 load 再 add，不能只留下最新文档。"""
+        root = tmp_path / "bm25"
+        first = BM25Indexer(collection="col_a", index_root=root)
+        first.add([_stats("doc1_0000", "first document azure")])
+        first.save()
+
+        second = BM25Indexer(collection="col_a", index_root=root)
+        second.load()
+        second.add([_stats("doc2_0000", "second document bm25")])
+        second.save()
+
+        reloaded = BM25Indexer(collection="col_a", index_root=root)
+        reloaded.load()
+        assert "doc1_0000" in reloaded._doc_lengths
+        assert "doc2_0000" in reloaded._doc_lengths
+        assert reloaded._document_count == 2

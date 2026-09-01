@@ -43,6 +43,8 @@ class VectorUpserter:
         chunks: Sequence[Chunk],
         dense_vectors: Sequence[Sequence[float]],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[str]:
         """
         批量幂等写入向量记录，返回与输入等长的稳定 chunk_id 列表。
@@ -50,6 +52,7 @@ class VectorUpserter:
         Args:
             chunks: 待写入 Chunk，metadata 需含 source_path 与 chunk_index。
             dense_vectors: DenseEncoder 产出的向量，顺序与 chunks 对齐。
+            collection: 目标 Chroma 集合；缺省时使用配置默认集合。
             trace: 可选 TraceContext，记录写入耗时。
 
         Returns:
@@ -82,7 +85,7 @@ class VectorUpserter:
             )
 
         try:
-            self._vector_store.upsert(records, trace=trace)
+            self._vector_store.upsert(records, trace=trace, collection=collection)
         except VectorStoreError as exc:
             raise VectorUpserterError(f"向量库 upsert 失败: {exc}") from exc
 

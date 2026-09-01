@@ -22,6 +22,8 @@ class _ChromaLike(Protocol):
         self,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
 
@@ -105,10 +107,12 @@ class DataService:
         )
 
     def list_collections(self) -> list[str]:
-        """从 chunk metadata 收集去重后的集合名，供筛选下拉框使用。"""
-        records = self._chroma.get_by_metadata(None)
+        """从 Chroma 集合名与 chunk metadata 收集去重后的逻辑集合，供筛选下拉框。"""
         names: set[str] = set()
-        for item in records:
+        names_fn = getattr(self._chroma, "list_collection_names", None)
+        if callable(names_fn):
+            names.update(str(item).strip() for item in names_fn() if str(item).strip())
+        for item in self._iter_chroma_records():
             metadata = item.get("metadata") or {}
             name = str(metadata.get("collection") or "").strip()
             if name:
@@ -126,16 +130,16 @@ class DataService:
         列出已摄入文档。
 
         Args:
-            collection: 按 metadata.collection 筛选；空则不过滤。
+            collection: 逻辑集合名；空则列出全部 Chroma collection。
             keyword: 对 source_path 做不区分大小写的子串匹配。
 
         Returns:
             按集合名、路径排序的文档行。
         """
-        filters: dict[str, Any] | None = None
         if collection and collection.strip():
-            filters = {"collection": collection.strip()}
-        records = self._chroma.get_by_metadata(filters)
+            records = self._chroma.get_by_metadata(None, collection=collection.strip())
+        else:
+            records = self._iter_chroma_records()
         grouped = _group_by_source(records, collection)
         processed = self._processed_by_path()
         needle = (keyword or "").strip().lower()
@@ -178,7 +182,10 @@ class DataService:
 
         source = source_path.strip()
         coll = collection.strip()
-        records = self._chroma.get_by_metadata({"source_path": source, "collection": coll})
+        records = self._chroma.get_by_metadata(
+            {"source_path": source, "collection": coll},
+            collection=coll,
+        )
         records.sort(key=_chunk_sort_key)
 
         views: list[ChunkView] = []
@@ -249,6 +256,17 @@ class DataService:
             if path:
                 mapping[path] = row
         return mapping
+
+    def _iter_chroma_records(self) -> list[dict[str, Any]]:
+        names_fn = getattr(self._chroma, "list_collection_names", None)
+        if callable(names_fn):
+            names = [str(item).strip() for item in names_fn() if str(item).strip()]
+            if names:
+                records: list[dict[str, Any]] = []
+                for name in names:
+                    records.extend(self._chroma.get_by_metadata(None, collection=name))
+                return records
+        return self._chroma.get_by_metadata(None)
 
 
 def _group_by_source(

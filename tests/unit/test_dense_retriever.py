@@ -36,12 +36,19 @@ class RecordingVectorStore(BaseVectorStore):
         self.last_vector: list[float] | None = None
         self.last_top_k: int | None = None
         self.last_filters: Mapping[str, Any] | None = None
+        self.last_collection: str | None = None
         self._results: list[dict[str, Any]] = []
 
     def set_results(self, results: list[dict[str, Any]]) -> None:
         self._results = results
 
-    def upsert(self, records: Sequence[Mapping[str, Any]], trace: Any | None = None) -> None:
+    def upsert(
+        self,
+        records: Sequence[Mapping[str, Any]],
+        trace: Any | None = None,
+        *,
+        collection: str | None = None,
+    ) -> None:
         raise NotImplementedError
 
     def query(
@@ -50,16 +57,21 @@ class RecordingVectorStore(BaseVectorStore):
         top_k: int,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         self.last_vector = [float(v) for v in vector]
         self.last_top_k = top_k
         self.last_filters = dict(filters) if filters else None
+        self.last_collection = collection
         return list(self._results[:top_k])
 
     def get_by_ids(
         self,
         ids: Sequence[str],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         return []
 
@@ -97,7 +109,8 @@ class TestDenseRetriever:
 
         assert embedding.last_texts == ["Azure 配置"]
         assert vector_store.last_top_k == 3
-        assert vector_store.last_filters == {"collection": "docs"}
+        assert vector_store.last_filters is None
+        assert vector_store.last_collection == "docs"
         assert len(vector_store.last_vector) == settings.embedding.dimensions
 
         assert len(results) == 1

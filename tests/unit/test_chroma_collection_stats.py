@@ -56,3 +56,93 @@ class TestChromaCollectionStats:
         stats = store.get_collection_stats("docs")
         assert stats.chunk_count == 3
         assert stats.document_count == 2
+
+    def test_upsert_and_query_are_scoped_to_collection(self, tmp_path) -> None:
+        """同一 PersistentClient 下，写入 col_a 不应出现在 col_b 的检索结果中。"""
+        store = ChromaStore(_settings(tmp_path, "col_a"))
+        store.upsert(
+            [
+                {
+                    "id": "only-a",
+                    "text": "alpha",
+                    "metadata": {"source_path": "a.pdf"},
+                    "dense_vector": [1.0, 0.0],
+                }
+            ],
+            collection="col_a",
+        )
+        assert store.query([1.0, 0.0], top_k=3, collection="col_b") == []
+        hits = store.query([1.0, 0.0], top_k=3, collection="col_a")
+        assert [item["id"] for item in hits] == ["only-a"]
+        assert store.list_collection_names() == ["col_a"]
+
+    def test_delete_collection_removes_empty_shell(self, tmp_path) -> None:
+        """delete_collection 后集合名不应再出现在 list 中。"""
+        store = ChromaStore(_settings(tmp_path, "empty_col"))
+        store.upsert(
+            [
+                {
+                    "id": "c1",
+                    "text": "一段",
+                    "metadata": {"source_path": "a.pdf", "collection": "empty_col"},
+                    "dense_vector": [1.0, 0.0],
+                }
+            ],
+            collection="empty_col",
+        )
+        deleted = store.delete_by_metadata(
+            {"source_path": "a.pdf"},
+            collection="empty_col",
+        )
+        assert deleted == 1
+        assert store.list_collection_names() == ["empty_col"]
+        store.delete_collection("empty_col")
+        assert store.list_collection_names() == []
+        store.delete_collection("empty_col")
+        assert store.list_collection_names() == []
+
+    def test_cleanup_removes_unreferenced_uuid_dir(self, tmp_path) -> None:
+        """sqlite 未引用的 UUID 目录应被 cleanup 删除，不影响仍在用的集合。"""
+        store = ChromaStore(_settings(tmp_path, "keep_col"))
+        store.upsert(
+            [
+                {
+                    "id": "keep-1",
+                    "text": "保留",
+                    "metadata": {"source_path": "keep.pdf"},
+                    "dense_vector": [1.0, 0.0],
+                }
+            ],
+            collection="keep_col",
+        )
+        root = tmp_path / "chroma"
+        orphan = root / "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        orphan.mkdir()
+        (orphan / "data_level0.bin").write_bytes(b"orphan")
+        removed = store.cleanup_orphan_segment_dirs()
+        assert "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" in removed
+        assert not orphan.exists()
+        assert store.list_collection_names() == ["keep_col"]
+        hits = store.query([1.0, 0.0], top_k=1, collection="keep_col")
+        assert [item["id"] for item in hits] == ["keep-1"]
+
+    def test_delete_collection_sweeps_orphans_when_unlocked(self, tmp_path) -> None:
+        """delete_collection 会触发孤儿清理（未锁定的目录应被删掉）。"""
+        store = ChromaStore(_settings(tmp_path, "keep_col"))
+        store.upsert(
+            [
+                {
+                    "id": "keep-1",
+                    "text": "保留",
+                    "metadata": {"source_path": "keep.pdf"},
+                    "dense_vector": [1.0, 0.0],
+                }
+            ],
+            collection="keep_col",
+        )
+        orphan = tmp_path / "chroma" / "11111111-2222-3333-4444-555555555555"
+        orphan.mkdir()
+        (orphan / "header.bin").write_bytes(b"x")
+        store.delete_collection("missing_col")
+        assert not orphan.exists()
+        assert store.list_collection_names() == ["keep_col"]

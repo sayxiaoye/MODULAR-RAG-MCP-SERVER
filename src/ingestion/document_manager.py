@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Callable, Mapping, Protocol, Sequence
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentManagerError(Exception):
@@ -16,17 +19,27 @@ class _VectorStoreLike(Protocol):
         self,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def delete_by_metadata(
         self,
         filters: Mapping[str, Any],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> int: ...
 
 
 class _BM25Like(Protocol):
-    def remove_document(self, source: str, chunk_ids: Sequence[str] | None = None) -> None: ...
+    def remove_document(
+        self,
+        source: str,
+        chunk_ids: Sequence[str] | None = None,
+        *,
+        doc_hash: str | None = None,
+    ) -> None: ...
 
     def save(self) -> None: ...
 
@@ -42,7 +55,7 @@ class _ImageStorageLike(Protocol):
 
 
 class _IntegrityLike(Protocol):
-    def remove_record(self, file_hash: str) -> None: ...
+    def remove_record(self, file_hash: str, collection: str | None = None) -> None: ...
 
     def list_processed(self) -> list[dict[str, Any]]: ...
 
@@ -103,11 +116,13 @@ class DocumentManager:
         bm25_indexer: _BM25Like,
         image_storage: _ImageStorageLike,
         file_integrity: _IntegrityLike,
+        trace_writer: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> None:
         self._chroma = chroma_store
         self._bm25 = bm25_indexer
         self._images = image_storage
         self._integrity = file_integrity
+        self._trace_writer = trace_writer
 
     def list_documents(self, collection: str | None = None) -> list[DocumentInfo]:
         """列出已摄入文档（source、chunk 数、图片数）。"""
@@ -142,7 +157,7 @@ class DocumentManager:
         if not doc_id or not doc_id.strip():
             raise DocumentManagerError("doc_id 不能为空")
         needle = doc_id.strip()
-        records = self._chroma.get_by_metadata(None)
+        records = self._iter_chroma_records()
         matched = [
             item
             for item in records
@@ -178,31 +193,47 @@ class DocumentManager:
         source = source_path.strip()
         coll = collection.strip()
         filters = {"source_path": source, "collection": coll}
-        records = self._chroma.get_by_metadata(filters)
+        records = self._chroma.get_by_metadata(filters, collection=coll)
         chunk_ids = [str(item.get("id", "")) for item in records if item.get("id")]
         doc_hash = _first_doc_hash(records)
 
-        chroma_deleted = self._chroma.delete_by_metadata(filters)
-        self._bm25.remove_document(source, chunk_ids=chunk_ids or None)
-        if hasattr(self._bm25, "save"):
-            self._bm25.save()
+        chroma_deleted = self._chroma.delete_by_metadata(filters, collection=coll)
+        bm25 = self._bm25_for_collection(coll)
+        if not doc_hash:
+            doc_hash = _file_hash_from_integrity(self._integrity, source)
+        remaining = self._chroma.get_by_metadata(None, collection=coll)
+        if not remaining:
+            # 集合已无向量：丢掉孤儿 BM25 json，并 drop 空的 Chroma collection
+            if hasattr(bm25, "drop"):
+                bm25.drop()
+            else:
+                bm25.remove_document(source, chunk_ids=chunk_ids or None, doc_hash=doc_hash)
+                if hasattr(bm25, "save"):
+                    bm25.save()
+            delete_collection = getattr(self._chroma, "delete_collection", None)
+            if callable(delete_collection):
+                delete_collection(coll)
+        else:
+            bm25.remove_document(source, chunk_ids=chunk_ids or None, doc_hash=doc_hash)
+            if hasattr(bm25, "save"):
+                bm25.save()
         images_deleted = self._images.delete_images(coll, doc_hash=doc_hash)
 
         integrity_removed = False
         file_hash = _first_file_hash(records, doc_hash)
         if file_hash:
-            self._integrity.remove_record(file_hash)
+            self._integrity.remove_record(file_hash, collection=coll)
             integrity_removed = True
         else:
             # 回退：按规范化路径匹配摄取历史
             target = _normalize_path(source)
             for row in self._integrity.list_processed():
                 if _normalize_path(str(row.get("file_path", ""))) == target:
-                    self._integrity.remove_record(str(row["file_hash"]))
+                    self._integrity.remove_record(str(row["file_hash"]), collection=coll)
                     integrity_removed = True
                     break
 
-        return DeleteResult(
+        result = DeleteResult(
             source_path=source,
             collection=coll,
             chroma_deleted=chroma_deleted,
@@ -210,6 +241,8 @@ class DocumentManager:
             images_deleted=images_deleted,
             integrity_removed=integrity_removed,
         )
+        _persist_delete_trace(result, self._trace_writer)
+        return result
 
     def get_collection_stats(self, collection: str | None = None) -> CollectionStats:
         """汇总文档数、chunk 数与图片数。"""
@@ -224,10 +257,41 @@ class DocumentManager:
         )
 
     def _fetch_records(self, collection: str | None) -> list[dict[str, Any]]:
-        filters: dict[str, Any] | None = None
         if collection and collection.strip():
-            filters = {"collection": collection.strip()}
-        return self._chroma.get_by_metadata(filters)
+            name = collection.strip()
+            return self._chroma.get_by_metadata(None, collection=name)
+        return self._iter_chroma_records()
+
+    def _iter_chroma_records(self) -> list[dict[str, Any]]:
+        """读取全部逻辑集合中的 chunk；无 list_collection_names 时回退单次 get。"""
+        names_fn = getattr(self._chroma, "list_collection_names", None)
+        if callable(names_fn):
+            names = [str(item).strip() for item in names_fn() if str(item).strip()]
+            if names:
+                records: list[dict[str, Any]] = []
+                for name in names:
+                    records.extend(self._chroma.get_by_metadata(None, collection=name))
+                return records
+        return self._chroma.get_by_metadata(None)
+
+    def _bm25_for_collection(self, collection: str) -> _BM25Like:
+        """按逻辑集合打开对应 bm25/{name}.json；Fake 无 collection 属性时复用注入实例。"""
+        indexer = self._bm25
+        current = getattr(indexer, "collection", None)
+        root = getattr(indexer, "index_root", None)
+        if root is None:
+            return indexer
+        from ingestion.storage.bm25_indexer import BM25Indexer, BM25IndexerError
+
+        target = indexer
+        if current != collection:
+            target = BM25Indexer(collection=collection, index_root=root)
+        if not getattr(target, "_doc_lengths", None):
+            try:
+                target.load()
+            except BM25IndexerError:
+                pass
+        return target
 
     def _group_by_source(
         self,
@@ -259,6 +323,21 @@ def _first_doc_hash(records: Sequence[Mapping[str, Any]]) -> str | None:
         value = metadata.get("doc_hash") or metadata.get("document_id")
         if isinstance(value, str) and value.strip():
             return value.strip()
+    return None
+
+
+def _file_hash_from_integrity(integrity: _IntegrityLike, source_path: str) -> str | None:
+    """Chroma 已空时，从摄取历史按路径回退 file_hash / doc_hash。"""
+    target = _normalize_path(source_path)
+    if not target:
+        return None
+    for row in integrity.list_processed():
+        if _normalize_path(str(row.get("file_path", ""))) != target:
+            continue
+        for key in ("file_hash", "doc_hash"):
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
     return None
 
 
@@ -296,3 +375,37 @@ def _normalize_path(path: str) -> str:
         return str(Path(path).resolve()).replace("\\", "/").lower()
     except OSError:
         return path.replace("\\", "/").lower()
+
+
+def _persist_delete_trace(
+    result: DeleteResult,
+    writer: Callable[[Mapping[str, Any]], None] | None,
+) -> None:
+    """删除完成后追加一条 ingestion Trace，Dashboard 显示为「删除」。"""
+    try:
+        from core.settings import load_settings
+        from core.trace.trace_context import TraceContext
+        from observability.logger import write_trace
+
+        try:
+            if not load_settings().observability.trace_enabled:
+                return
+        except Exception:
+            pass
+        trace = TraceContext(trace_type="ingestion")
+        trace.record_stage(
+            "deleted",
+            elapsed_ms=0.0,
+            method="document_manager",
+            source_path=result.source_path,
+            collection=result.collection,
+            chunk_count=result.chroma_deleted,
+            chroma_deleted=result.chroma_deleted,
+            images_deleted=result.images_deleted,
+            integrity_removed=result.integrity_removed,
+        )
+        trace.finish()
+        sink = writer or write_trace
+        sink(trace.to_dict())
+    except Exception:
+        logger.warning("写入删除 trace 失败", exc_info=True)

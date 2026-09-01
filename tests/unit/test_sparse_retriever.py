@@ -47,6 +47,8 @@ class RecordingVectorStore(BaseVectorStore):
         self,
         records: Sequence[Mapping[str, Any]],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> None:
         raise NotImplementedError
 
@@ -56,6 +58,8 @@ class RecordingVectorStore(BaseVectorStore):
         top_k: int,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         raise NotImplementedError
 
@@ -63,6 +67,8 @@ class RecordingVectorStore(BaseVectorStore):
         self,
         ids: Sequence[str],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         self.last_ids = [str(record_id) for record_id in ids]
         results: list[dict[str, Any]] = []

@@ -68,6 +68,60 @@ class TestSQLiteIntegrityChecker:
         for index in range(8):
             assert integrity_checker.should_skip(f"hash-{index}") is True
 
+    def test_should_skip_is_scoped_to_collection(
+        self, integrity_checker: SQLiteIntegrityChecker
+    ) -> None:
+        """同一文件只应在已成功摄入的集合上跳过。"""
+        file_hash = "same-pdf-hash"
+        integrity_checker.mark_success(
+            file_hash, "docs/week1.pdf", chunk_count=10, collection="col_a"
+        )
+        assert integrity_checker.should_skip(file_hash, collection="col_a") is True
+        assert integrity_checker.should_skip(file_hash, collection="col_b") is False
+
+    def test_legacy_row_without_collection_does_not_skip_named_target(
+        self, integrity_checker: SQLiteIntegrityChecker
+    ) -> None:
+        """旧表迁移后 collection 为空的记录，不应挡住新集合摄入。"""
+        file_hash = "legacy-hash"
+        integrity_checker.mark_success(file_hash, "docs/week1.pdf", chunk_count=10)
+        assert integrity_checker.should_skip(file_hash) is True
+        assert integrity_checker.should_skip(file_hash, collection="col_b") is False
+
+    def test_migrates_pre_collection_schema(self, tmp_path: Path) -> None:
+        """旧库只有 file_hash 主键时，打开检查器应迁移且不误跳过新集合。"""
+        import sqlite3
+
+        db_path = tmp_path / "legacy_history.db"
+        with sqlite3.connect(db_path) as conn:
+            conn.executescript(
+                """
+                CREATE TABLE ingestion_history (
+                    file_hash TEXT PRIMARY KEY,
+                    file_path TEXT NOT NULL,
+                    file_size INTEGER,
+                    status TEXT NOT NULL,
+                    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    error_msg TEXT,
+                    chunk_count INTEGER
+                );
+                """
+            )
+            conn.execute(
+                """
+                INSERT INTO ingestion_history (file_hash, file_path, status, chunk_count)
+                VALUES (?, ?, 'success', 10)
+                """,
+                ("legacy-pdf-hash", "week1.pdf"),
+            )
+        checker = SQLiteIntegrityChecker(db_path=db_path)
+        try:
+            assert checker.should_skip("legacy-pdf-hash") is True
+            assert checker.should_skip("legacy-pdf-hash", collection="col_b") is False
+        finally:
+            with checker._connect() as conn:
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
     def test_compute_sha256_missing_file_raises(self, integrity_checker: SQLiteIntegrityChecker) -> None:
         """文件不存在时应抛出 FileIntegrityError。"""
         with pytest.raises(FileIntegrityError, match="不存在"):

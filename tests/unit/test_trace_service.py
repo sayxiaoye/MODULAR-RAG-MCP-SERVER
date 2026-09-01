@@ -126,6 +126,33 @@ class TestTraceService:
         assert skipped is not None and skipped.status == "跳过"
         assert failed is not None and failed.status == "失败"
 
+    def test_deleted_status_from_deleted_stage(self) -> None:
+        """deleted 阶段应映射为删除，并带出文件、集合与 chunk 数。"""
+        record = parse_trace_payload(
+            {
+                "trace_id": "d1",
+                "trace_type": "ingestion",
+                "started_at": "t",
+                "finished_at": "t2",
+                "total_elapsed_ms": 2.5,
+                "stages": [
+                    {
+                        "name": "deleted",
+                        "elapsed_ms": 0,
+                        "method": "document_manager",
+                        "source_path": "/data/week1.pdf",
+                        "collection": "col_b",
+                        "chunk_count": 19,
+                    }
+                ],
+            }
+        )
+        assert record is not None
+        assert record.status == "删除"
+        assert record.source_name == "week1.pdf"
+        assert record.collection == "col_b"
+        assert record.chunk_count == 19
+
     def test_get_trace_by_id(self, tmp_path: Path) -> None:
         """get_trace 应按 trace_id 返回单条记录。"""
         path = tmp_path / "traces.jsonl"

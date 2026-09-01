@@ -23,6 +23,8 @@ class BaseVectorStore(ABC):
         self,
         records: Sequence[Mapping[str, Any]],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> None:
         """
         批量写入或更新向量记录（幂等由具体实现保证）。
@@ -30,6 +32,7 @@ class BaseVectorStore(ABC):
         Args:
             records: 记录列表，每条至少含 id/text/metadata/dense_vector。
             trace: 可选追踪上下文（F 阶段注入）。
+            collection: 逻辑集合名；None 时由实现使用配置默认集合。
         """
 
     @abstractmethod
@@ -39,6 +42,8 @@ class BaseVectorStore(ABC):
         top_k: int,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         按稠密向量检索 Top-K 相似记录。
@@ -48,6 +53,7 @@ class BaseVectorStore(ABC):
             top_k: 返回条数上限。
             filters: 可选 metadata 过滤条件。
             trace: 可选追踪上下文。
+            collection: 逻辑集合名；None 时由实现使用配置默认集合。
 
         Returns:
             结果列表，每项含 id、score、text、metadata 字段。
@@ -58,6 +64,8 @@ class BaseVectorStore(ABC):
         self,
         ids: Sequence[str],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         """
         按 chunk_id 批量获取文本与 metadata（供 SparseRetriever 回填正文）。
@@ -65,6 +73,7 @@ class BaseVectorStore(ABC):
         Args:
             ids: chunk_id 列表。
             trace: 可选追踪上下文。
+            collection: 逻辑集合名；None 时由实现使用配置默认集合。
 
         Returns:
             记录列表，每项含 id、text、metadata 字段（顺序不保证与输入一致）。
@@ -74,14 +83,32 @@ class BaseVectorStore(ABC):
         self,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         """按 metadata 过滤读取记录；默认实现未提供时由子类覆盖。"""
         raise VectorStoreError("当前 VectorStore 未实现 get_by_metadata")
+
+    def list_collection_names(self) -> list[str]:
+        """列出已存在的逻辑集合名；默认空列表。"""
+        return []
+
+    def delete_collection(self, collection: str, trace: Any | None = None) -> None:
+        """
+        删除整个逻辑集合（含空壳）。
+
+        Args:
+            collection: 逻辑集合名。
+            trace: 可选追踪上下文。
+        """
+        raise VectorStoreError("当前 VectorStore 未实现 delete_collection")
 
     def delete_by_metadata(
         self,
         filters: Mapping[str, Any],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> int:
         """
         按 metadata 条件批量删除。
@@ -89,6 +116,7 @@ class BaseVectorStore(ABC):
         Args:
             filters: 等值过滤条件（如 source_path / collection）。
             trace: 可选追踪上下文。
+            collection: 逻辑集合名；None 时由实现使用配置默认集合。
 
         Returns:
             删除的记录条数。

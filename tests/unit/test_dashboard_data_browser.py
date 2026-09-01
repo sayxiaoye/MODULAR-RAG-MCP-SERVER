@@ -22,7 +22,7 @@ class TestDataBrowserPage:
             from observability.dashboard.services.data_service import DataService
 
             class FakeChroma:
-                def get_by_metadata(self, filters=None, trace=None):
+                def get_by_metadata(self, filters=None, trace=None, collection=None):
                     return []
 
             class FakeImageStorage:
@@ -51,7 +51,7 @@ class TestDataBrowserPage:
             from observability.dashboard.services.data_service import DataService
 
             class FakeChroma:
-                def get_by_metadata(self, filters=None, trace=None):
+                def get_by_metadata(self, filters=None, trace=None, collection=None):
                     records = [
                         {
                             "id": "chunk-aaa",

@@ -27,6 +27,8 @@ class InMemoryVectorStore(BaseVectorStore):
         self,
         records: Sequence[Mapping[str, Any]],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> None:
         validated = self._validate_upsert_records(records)
         for record in validated:
@@ -43,6 +45,8 @@ class InMemoryVectorStore(BaseVectorStore):
         top_k: int,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         query_vector = self._validate_query_vector(vector, top_k)
         scored: list[tuple[float, dict[str, Any]]] = []
@@ -73,6 +77,8 @@ class InMemoryVectorStore(BaseVectorStore):
         self,
         ids: Sequence[str],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         """按 ID 从内存字典批量读取记录。"""
         if not ids:

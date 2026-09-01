@@ -87,7 +87,11 @@ class SparseRetriever:
 
         start = time.perf_counter()
         try:
-            records = self._vector_store.get_by_ids(chunk_ids, trace=trace)
+            records = self._vector_store.get_by_ids(
+                chunk_ids,
+                trace=trace,
+                collection=self._settings.vector_store.collection_name,
+            )
         except VectorStoreError as exc:
             raise SparseRetrieverError(f"向量库批量读取失败: {exc}") from exc
 

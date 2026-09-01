@@ -11,6 +11,12 @@ from ingestion.embedding.sparse_encoder import SparseChunkStats
 from ingestion.storage.bm25_indexer import BM25Indexer
 
 
+@pytest.fixture(autouse=True)
+def _mute_delete_trace_file(monkeypatch: pytest.MonkeyPatch) -> None:
+    """默认删除 trace 不写入仓库 traces.jsonl；需要断言时传入 trace_writer。"""
+    monkeypatch.setattr("observability.logger.write_trace", lambda *args, **kwargs: None)
+
+
 def _record(
     chunk_id: str,
     source_path: str,
@@ -36,17 +42,27 @@ class FakeChroma:
 
     def __init__(self, records: list[dict[str, Any]] | None = None) -> None:
         self.records = list(records or [])
+        self.deleted_collections: list[str] = []
 
     def get_by_metadata(
         self,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
+        records = list(self.records)
+        if collection:
+            records = [
+                item
+                for item in records
+                if str(item.get("metadata", {}).get("collection") or "") == collection
+            ]
         if not filters:
-            return list(self.records)
+            return records
         return [
             item
-            for item in self.records
+            for item in records
             if all(item.get("metadata", {}).get(key) == value for key, value in filters.items())
         ]
 
@@ -54,16 +70,38 @@ class FakeChroma:
         self,
         filters: Mapping[str, Any],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> int:
         remaining: list[dict[str, Any]] = []
         deleted = 0
+        scoped = list(self.records)
+        if collection:
+            scoped = [
+                item
+                for item in scoped
+                if str(item.get("metadata", {}).get("collection") or "") == collection
+            ]
+        scoped_ids = {item.get("id") for item in scoped}
         for item in self.records:
+            if item.get("id") not in scoped_ids:
+                remaining.append(item)
+                continue
             if all(item.get("metadata", {}).get(key) == value for key, value in filters.items()):
                 deleted += 1
             else:
                 remaining.append(item)
         self.records = remaining
         return deleted
+
+    def delete_collection(self, collection: str, trace: Any | None = None) -> None:
+        self.deleted_collections.append(collection)
+        name = (collection or "").strip()
+        self.records = [
+            item
+            for item in self.records
+            if str(item.get("metadata", {}).get("collection") or "") != name
+        ]
 
 
 class FakeBM25:
@@ -72,9 +110,17 @@ class FakeBM25:
     def __init__(self) -> None:
         self.removed: list[tuple[str, list[str] | None]] = []
         self.saved = False
+        self.last_doc_hash: str | None = None
 
-    def remove_document(self, source: str, chunk_ids: Sequence[str] | None = None) -> None:
+    def remove_document(
+        self,
+        source: str,
+        chunk_ids: Sequence[str] | None = None,
+        *,
+        doc_hash: str | None = None,
+    ) -> None:
         self.removed.append((source, list(chunk_ids) if chunk_ids is not None else None))
+        self.last_doc_hash = doc_hash
 
     def save(self) -> None:
         self.saved = True
@@ -100,7 +146,7 @@ class FakeIntegrity:
         self.rows = list(rows or [])
         self.removed: list[str] = []
 
-    def remove_record(self, file_hash: str) -> None:
+    def remove_record(self, file_hash: str, collection: str | None = None) -> None:
         self.removed.append(file_hash)
         self.rows = [row for row in self.rows if row.get("file_hash") != file_hash]
 
@@ -154,11 +200,37 @@ class TestDocumentManager:
         assert result.bm25_removed is True
         assert result.integrity_removed is True
         assert bm25.removed == [("a.pdf", ["c1", "c2"])]
+        assert bm25.last_doc_hash == "h1"
         assert bm25.saved is True
         assert images.deleted == [("docs", "h1")]
         assert integrity.removed == ["sha-a"]
         remaining = manager.list_documents("docs")
         assert [item.source_path for item in remaining] == ["b.pdf"]
+        assert chroma.deleted_collections == []
+
+    def test_delete_document_writes_deleted_trace(self) -> None:
+        """删除文档应写入 ingestion trace，阶段名为 deleted。"""
+        captured: list[dict[str, Any]] = []
+        chroma = FakeChroma(
+            [_record("c1", "a.pdf", doc_hash="h1", file_hash="sha-a")]
+        )
+        manager = DocumentManager(
+            chroma,
+            FakeBM25(),
+            FakeImageStorage(),
+            FakeIntegrity(),
+            trace_writer=captured.append,
+        )
+        manager.delete_document("a.pdf", "docs")
+        assert len(captured) == 1
+        payload = captured[0]
+        assert payload["trace_type"] == "ingestion"
+        assert payload["finished_at"]
+        stages = payload["stages"]
+        assert stages[0]["name"] == "deleted"
+        assert stages[0]["source_path"] == "a.pdf"
+        assert stages[0]["collection"] == "docs"
+        assert stages[0]["chunk_count"] == 1
 
     def test_delete_falls_back_to_integrity_file_path(self) -> None:
         """chunk 无 file_hash 时，应按规范化路径匹配摄取历史。"""
@@ -222,3 +294,68 @@ class TestDocumentManager:
         indexer.remove_document("a.pdf", chunk_ids=["c1"])
         assert "c1" not in indexer._doc_lengths
         assert "c2" in indexer._doc_lengths
+
+    def test_bm25_remove_document_by_doc_hash_prefix(self, tmp_path) -> None:
+        """Chroma 稳定 id 对不上时，应按 SparseEncoder 的 doc_hash 前缀清 posting。"""
+        doc_hash = "95058c505d940402e473ee4cc785ea12d0bdba952a976e119b3587e75ec2351f"
+        bm25_id = f"{doc_hash}_0000_78883563"
+        keep_id = "otherdoc_0000_aaaaaaaa"
+        indexer = BM25Indexer(collection="docs", index_root=tmp_path)
+        indexer.add(
+            [
+                SparseChunkStats(bm25_id, {"深": 1}, 1),
+                SparseChunkStats(keep_id, {"guide": 1}, 1),
+            ]
+        )
+        indexer.remove_document("a.pdf", chunk_ids=["chroma-stable-id"], doc_hash=doc_hash)
+        assert bm25_id not in indexer._doc_lengths
+        assert keep_id in indexer._doc_lengths
+
+    def test_bm25_save_deletes_empty_index_file(self, tmp_path) -> None:
+        """集合清空后 save 应删除 bm25 json，而不是留下空文件。"""
+        indexer = BM25Indexer(collection="col_x", index_root=tmp_path)
+        indexer.add([SparseChunkStats("c1", {"深": 1}, 1)])
+        indexer.save()
+        path = tmp_path / "col_x.json"
+        assert path.is_file()
+        indexer.remove_document("a.pdf", chunk_ids=["c1"])
+        indexer.save()
+        assert not path.exists()
+
+    def test_delete_drops_orphan_bm25_when_collection_empty(self, tmp_path) -> None:
+        """Chroma 已删光时，即使 id 不一致也应删除孤儿 BM25 文件。"""
+        doc_hash = "95058c505d940402e473ee4cc785ea12d0bdba952a976e119b3587e75ec2351f"
+        bm25_id = f"{doc_hash}_0000_78883563"
+        chroma_id = "06d8e83bc14709759edda613280c9c272d114b38e8e3be89c1c96b176112d708"
+        indexer = BM25Indexer(collection="col_x", index_root=tmp_path)
+        indexer.add([SparseChunkStats(bm25_id, {"深": 1}, 1)])
+        indexer.save()
+
+        chroma = FakeChroma(
+            [_record(chroma_id, "a.pdf", collection="col_x", doc_hash=doc_hash)]
+        )
+        manager = DocumentManager(chroma, indexer, FakeImageStorage(), FakeIntegrity())
+        manager.delete_document("a.pdf", "col_x")
+        assert not (tmp_path / "col_x.json").exists()
+        assert chroma.deleted_collections == ["col_x"]
+
+    def test_delete_last_document_drops_chroma_collection(self) -> None:
+        """删光集合内最后一篇文档时应 drop 空的 Chroma collection。"""
+        chroma = FakeChroma(
+            [_record("c1", "a.pdf", collection="col_x", doc_hash="h1")]
+        )
+        manager = DocumentManager(chroma, FakeBM25(), FakeImageStorage(), FakeIntegrity())
+        manager.delete_document("a.pdf", "col_x")
+        assert chroma.deleted_collections == ["col_x"]
+        assert chroma.records == []
+
+    def test_delete_uses_integrity_hash_when_chroma_empty(self) -> None:
+        """Chroma 已空时，应从摄取历史回退 file_hash 给 BM25。"""
+        chroma = FakeChroma()
+        bm25 = FakeBM25()
+        integrity = FakeIntegrity([{"file_hash": "sha-a", "file_path": "a.pdf"}])
+        manager = DocumentManager(chroma, bm25, FakeImageStorage(), integrity)
+
+        manager.delete_document("a.pdf", "docs")
+        assert bm25.last_doc_hash == "sha-a"
+        assert bm25.removed == [("a.pdf", None)]

@@ -26,6 +26,8 @@ class RecordingVectorStore(BaseVectorStore):
         self,
         records: Sequence[Mapping[str, Any]],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> None:
         validated = self._validate_upsert_records(records)
         self.upsert_calls += 1
@@ -44,6 +46,8 @@ class RecordingVectorStore(BaseVectorStore):
         top_k: int,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         return []
 
@@ -51,6 +55,8 @@ class RecordingVectorStore(BaseVectorStore):
         self,
         ids: Sequence[str],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
         return []
 

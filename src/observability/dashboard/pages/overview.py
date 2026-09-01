@@ -16,13 +16,30 @@ class _StatsProvider(Protocol):
 
 
 def _load_chroma_stats(settings: Any) -> CollectionStats | None:
-    """读取当前配置集合的统计；向量库不可用时返回 None，由页面展示占位。"""
+    """汇总持久化目录下全部 Chroma 集合的文档/chunk 数。"""
     try:
         store = VectorStoreFactory.create(settings)
         if not hasattr(store, "get_collection_stats"):
             return None
         stats_store: _StatsProvider = store  # type: ignore[assignment]
-        return stats_store.get_collection_stats()
+        names_fn = getattr(store, "list_collection_names", None)
+        names: list[str] = []
+        if callable(names_fn):
+            names = [str(item).strip() for item in names_fn() if str(item).strip()]
+        if not names:
+            return stats_store.get_collection_stats()
+        chunk_count = 0
+        document_count = 0
+        for name in names:
+            item = stats_store.get_collection_stats(name)
+            chunk_count += item.chunk_count
+            document_count += item.document_count
+        label = "、".join(names) if len(names) <= 3 else f"{len(names)} 个集合"
+        return CollectionStats(
+            collection=label,
+            chunk_count=chunk_count,
+            document_count=document_count,
+        )
     except Exception:
         return None
 

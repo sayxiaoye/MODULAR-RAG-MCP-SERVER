@@ -13,14 +13,38 @@ DEFAULT_INGESTION_HISTORY_DB = REPO_ROOT / "data" / "db" / "ingestion_history.db
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS ingestion_history (
-    file_hash TEXT PRIMARY KEY,
+    file_hash TEXT NOT NULL,
+    collection TEXT NOT NULL DEFAULT '',
     file_path TEXT NOT NULL,
     file_size INTEGER,
     status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'processing')),
     processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     error_msg TEXT,
-    chunk_count INTEGER
+    chunk_count INTEGER,
+    PRIMARY KEY (file_hash, collection)
 );
+CREATE INDEX IF NOT EXISTS idx_status ON ingestion_history(status);
+CREATE INDEX IF NOT EXISTS idx_processed_at ON ingestion_history(processed_at);
+"""
+
+_MIGRATE_ADD_COLLECTION_SQL = """
+CREATE TABLE ingestion_history_v2 (
+    file_hash TEXT NOT NULL,
+    collection TEXT NOT NULL DEFAULT '',
+    file_path TEXT NOT NULL,
+    file_size INTEGER,
+    status TEXT NOT NULL CHECK(status IN ('success', 'failed', 'processing')),
+    processed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    error_msg TEXT,
+    chunk_count INTEGER,
+    PRIMARY KEY (file_hash, collection)
+);
+INSERT INTO ingestion_history_v2
+    (file_hash, collection, file_path, file_size, status, processed_at, error_msg, chunk_count)
+SELECT file_hash, '', file_path, file_size, status, processed_at, error_msg, chunk_count
+FROM ingestion_history;
+DROP TABLE ingestion_history;
+ALTER TABLE ingestion_history_v2 RENAME TO ingestion_history;
 CREATE INDEX IF NOT EXISTS idx_status ON ingestion_history(status);
 CREATE INDEX IF NOT EXISTS idx_processed_at ON ingestion_history(processed_at);
 """
@@ -38,8 +62,8 @@ class FileIntegrityChecker(ABC):
         """计算文件 SHA256 十六进制摘要。"""
 
     @abstractmethod
-    def should_skip(self, file_hash: str) -> bool:
-        """若该 hash 已成功处理过，则返回 True（可跳过后续摄取）。"""
+    def should_skip(self, file_hash: str, collection: str | None = None) -> bool:
+        """若该 hash 已在目标集合成功处理过，则返回 True。"""
 
     @abstractmethod
     def mark_success(
@@ -48,6 +72,7 @@ class FileIntegrityChecker(ABC):
         file_path: str,
         chunk_count: int | None = None,
         file_size: int | None = None,
+        collection: str | None = None,
     ) -> None:
         """记录文件成功摄取，供后续增量跳过。"""
 
@@ -57,11 +82,12 @@ class FileIntegrityChecker(ABC):
         file_hash: str,
         error_msg: str,
         file_path: str | None = None,
+        collection: str | None = None,
     ) -> None:
         """记录摄取失败原因，不触发 should_skip。"""
 
     @abstractmethod
-    def remove_record(self, file_hash: str) -> None:
+    def remove_record(self, file_hash: str, collection: str | None = None) -> None:
         """删除摄取历史，使文件可被重新摄入。"""
 
     @abstractmethod
@@ -91,7 +117,15 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
 
     def _init_schema(self) -> None:
         with self._connect() as conn:
-            conn.executescript(_SCHEMA_SQL)
+            exists = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='ingestion_history'"
+            ).fetchone()
+            if exists is None:
+                conn.executescript(_SCHEMA_SQL)
+                return
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(ingestion_history)")}
+            if "collection" not in columns:
+                conn.executescript(_MIGRATE_ADD_COLLECTION_SQL)
 
     def compute_sha256(self, path: str) -> str:
         file_path = Path(path)
@@ -105,15 +139,28 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def should_skip(self, file_hash: str) -> bool:
+    def should_skip(self, file_hash: str, collection: str | None = None) -> bool:
         if not file_hash:
             raise FileIntegrityError("file_hash 不能为空")
+        scoped = (collection or "").strip()
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT status FROM ingestion_history WHERE file_hash = ?",
-                (file_hash,),
-            ).fetchone()
-        # 仅 success 状态视为已处理完成，failed/processing 不跳过
+            if scoped:
+                row = conn.execute(
+                    """
+                    SELECT status FROM ingestion_history
+                    WHERE file_hash = ? AND collection = ?
+                    """,
+                    (file_hash, scoped),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT status FROM ingestion_history
+                    WHERE file_hash = ? AND status = 'success'
+                    LIMIT 1
+                    """,
+                    (file_hash,),
+                ).fetchone()
         return row is not None and row[0] == "success"
 
     def mark_success(
@@ -122,21 +169,23 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
         file_path: str,
         chunk_count: int | None = None,
         file_size: int | None = None,
+        collection: str | None = None,
     ) -> None:
         if not file_hash:
             raise FileIntegrityError("file_hash 不能为空")
         resolved_size = file_size
         if resolved_size is None and Path(file_path).is_file():
             resolved_size = Path(file_path).stat().st_size
+        coll = (collection or "").strip()
 
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO ingestion_history
-                    (file_hash, file_path, file_size, status, error_msg, chunk_count, processed_at)
-                VALUES (?, ?, ?, 'success', NULL, ?, CURRENT_TIMESTAMP)
+                    (file_hash, collection, file_path, file_size, status, error_msg, chunk_count, processed_at)
+                VALUES (?, ?, ?, ?, 'success', NULL, ?, CURRENT_TIMESTAMP)
                 """,
-                (file_hash, file_path, resolved_size, chunk_count),
+                (file_hash, coll, file_path, resolved_size, chunk_count),
             )
 
     def mark_failed(
@@ -144,6 +193,7 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
         file_hash: str,
         error_msg: str,
         file_path: str | None = None,
+        collection: str | None = None,
     ) -> None:
         if not file_hash:
             raise FileIntegrityError("file_hash 不能为空")
@@ -152,25 +202,33 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
 
         stored_path = file_path or ""
         file_size = Path(file_path).stat().st_size if file_path and Path(file_path).is_file() else None
+        coll = (collection or "").strip()
         with self._connect() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO ingestion_history
-                    (file_hash, file_path, file_size, status, error_msg, chunk_count, processed_at)
-                VALUES (?, ?, ?, 'failed', ?, NULL, CURRENT_TIMESTAMP)
+                    (file_hash, collection, file_path, file_size, status, error_msg, chunk_count, processed_at)
+                VALUES (?, ?, ?, ?, 'failed', ?, NULL, CURRENT_TIMESTAMP)
                 """,
-                (file_hash, stored_path, file_size, error_msg),
+                (file_hash, coll, stored_path, file_size, error_msg),
             )
 
-    def remove_record(self, file_hash: str) -> None:
-        """按 file_hash 删除历史记录。"""
+    def remove_record(self, file_hash: str, collection: str | None = None) -> None:
+        """按 file_hash（及可选 collection）删除历史记录。"""
         if not file_hash:
             raise FileIntegrityError("file_hash 不能为空")
+        scoped = (collection or "").strip()
         with self._connect() as conn:
-            conn.execute(
-                "DELETE FROM ingestion_history WHERE file_hash = ?",
-                (file_hash,),
-            )
+            if scoped:
+                conn.execute(
+                    "DELETE FROM ingestion_history WHERE file_hash = ? AND collection = ?",
+                    (file_hash, scoped),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM ingestion_history WHERE file_hash = ?",
+                    (file_hash,),
+                )
 
     def list_processed(self) -> list[dict]:
         """返回全部摄取历史，按 processed_at 倒序。"""
@@ -178,7 +236,7 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
             rows = conn.execute(
                 """
                 SELECT file_hash, file_path, file_size, status, processed_at,
-                       error_msg, chunk_count
+                       error_msg, chunk_count, collection
                 FROM ingestion_history
                 ORDER BY processed_at DESC
                 """
@@ -192,6 +250,7 @@ class SQLiteIntegrityChecker(FileIntegrityChecker):
                 "processed_at": row[4],
                 "error_msg": row[5],
                 "chunk_count": row[6],
+                "collection": row[7],
             }
             for row in rows
         ]

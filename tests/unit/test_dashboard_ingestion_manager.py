@@ -23,7 +23,7 @@ class TestIngestionManagerPage:
             from observability.dashboard.services.data_service import DataService
 
             class FakeChroma:
-                def get_by_metadata(self, filters=None, trace=None):
+                def get_by_metadata(self, filters=None, trace=None, collection=None):
                     return []
 
             class FakeImages:
@@ -75,7 +75,7 @@ class TestIngestionManagerPage:
             from observability.dashboard.services.data_service import DataService
 
             class FakeChroma:
-                def get_by_metadata(self, filters=None, trace=None):
+                def get_by_metadata(self, filters=None, trace=None, collection=None):
                     return []
 
             class FakeImages:
@@ -129,7 +129,7 @@ class TestIngestionManagerPage:
             from observability.dashboard.services.data_service import DataService
 
             class FakeChroma:
-                def get_by_metadata(self, filters=None, trace=None):
+                def get_by_metadata(self, filters=None, trace=None, collection=None):
                     records = [
                         {
                             "id": "c1",

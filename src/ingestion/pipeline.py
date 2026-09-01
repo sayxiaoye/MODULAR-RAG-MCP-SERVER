@@ -17,7 +17,7 @@ from core.trace.trace_context import TraceContext
 from core.types import Chunk, Document, ImageMetadata
 from ingestion.chunking.document_chunker import DocumentChunker
 from ingestion.embedding.batch_processor import BatchProcessor, BatchEncodingResult
-from ingestion.storage.bm25_indexer import BM25Indexer
+from ingestion.storage.bm25_indexer import BM25Indexer, BM25IndexerError
 from ingestion.storage.image_storage import ImageStorage
 from ingestion.storage.vector_upserter import VectorUpserter
 from ingestion.transform.base_transform import BaseTransform
@@ -134,6 +134,7 @@ class IngestionPipeline:
         try:
             file_hash = self._run_integrity_precheck(
                 resolved_source,
+                collection=collection_name,
                 force=force,
                 on_progress=on_progress,
             )
@@ -186,6 +187,7 @@ class IngestionPipeline:
                 file_hash,
                 resolved_source,
                 chunk_count=len(chunks),
+                collection=collection_name,
             )
             active_trace.record_stage(
                 "pipeline_complete",
@@ -227,6 +229,7 @@ class IngestionPipeline:
         self,
         source_path: str,
         *,
+        collection: str,
         force: bool,
         on_progress: ProgressCallback | None,
     ) -> str | None:
@@ -237,9 +240,56 @@ class IngestionPipeline:
         except Exception as exc:
             raise IngestionPipelineError("integrity", str(exc)) from exc
 
-        if not force and self._integrity_checker.should_skip(file_hash):
-            return None
-        return file_hash
+        if force:
+            return file_hash
+        if not self._integrity_checker.should_skip(file_hash, collection=collection):
+            return file_hash
+        # 历史说已摄入，但目标集合已无向量（删集合/删文档后残留 integrity）时重新摄入
+        if self._should_verify_store() and not self._chunks_exist_in_collection(
+            collection,
+            file_hash,
+            source_path,
+        ):
+            logger.info(
+                "integrity 记录已过期，重新摄取: path=%s collection=%s",
+                source_path,
+                collection,
+            )
+            return file_hash
+        return None
+
+    def _should_verify_store(self) -> bool:
+        """有真实向量库时才核对 chunk；仅注入 Fake upserter 的单元测试信任 integrity。"""
+        return self._vector_store is not None or self._vector_upserter is None
+
+    def _chunks_exist_in_collection(
+        self,
+        collection: str,
+        file_hash: str,
+        source_path: str,
+    ) -> bool:
+        """目标集合中是否仍有该文件的 chunk。"""
+        store = self._vector_store
+        if store is None:
+            try:
+                store = VectorStoreFactory.create(self._settings_for_collection(collection))
+            except Exception:
+                return False
+        try:
+            records = store.get_by_metadata(None, collection=collection)
+        except Exception:
+            return False
+        needle_name = Path(source_path).name.lower()
+        for item in records:
+            metadata = item.get("metadata") or {}
+            if str(metadata.get("file_hash") or "") == file_hash:
+                return True
+            if str(metadata.get("doc_hash") or "") == file_hash:
+                return True
+            src = str(metadata.get("source_path") or metadata.get("source") or "")
+            if src and Path(src).name.lower() == needle_name:
+                return True
+        return False
 
     def _run_load(
         self,
@@ -386,13 +436,15 @@ class IngestionPipeline:
         if upserter is None:
             vector_store = self._vector_store or VectorStoreFactory.create(settings)
             upserter = VectorUpserter(vector_store)
-        bm25 = self._bm25_indexer or BM25Indexer(
-            collection=settings.vector_store.collection_name,
-            index_root=self._bm25_root,
-        )
+        bm25 = self._bm25_for_store(settings)
 
         try:
-            chunk_ids = upserter.upsert(chunks, dense_vectors, trace=trace)
+            chunk_ids = upserter.upsert(
+                chunks,
+                dense_vectors,
+                trace=trace,
+                collection=settings.vector_store.collection_name,
+            )
             bm25.add(list(sparse_stats))
             bm25.save()
         except Exception as exc:
@@ -408,6 +460,20 @@ class IngestionPipeline:
         )
         logger.info("阶段 store 完成: vectors=%d", len(chunk_ids))
         return chunk_ids
+
+    def _bm25_for_store(self, settings: Settings):
+        """打开目标集合的 BM25 索引；已有 json 时先 load，避免 save 覆盖先前文档。"""
+        target = settings.vector_store.collection_name
+        injected = self._bm25_indexer
+        current = getattr(injected, "collection", None) if injected is not None else None
+        if injected is not None and current in (None, target):
+            return injected
+        indexer = BM25Indexer(collection=target, index_root=self._bm25_root)
+        try:
+            indexer.load()
+        except BM25IndexerError:
+            pass
+        return indexer
 
     def _sync_document_images(
         self,

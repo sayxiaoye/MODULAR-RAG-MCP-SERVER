@@ -23,10 +23,16 @@ class _FakeIntegrity:
     def compute_sha256(self, path: str) -> str:
         return "fake-hash"
 
-    def should_skip(self, file_hash: str) -> bool:
+    def should_skip(self, file_hash: str, collection: str | None = None) -> bool:
         return self._skip
 
-    def mark_success(self, file_hash: str, source_path: str, chunk_count: int = 0) -> None:
+    def mark_success(
+        self,
+        file_hash: str,
+        source_path: str,
+        chunk_count: int = 0,
+        **kwargs: Any,
+    ) -> None:
         return None
 
 
@@ -81,6 +87,8 @@ class _FakeUpserter:
         chunks: Sequence[Chunk],
         dense_vectors: Sequence[Any],
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[str]:
         return [chunk.id for chunk in chunks]
 
@@ -171,3 +179,88 @@ class TestPipelineProgress:
 
         assert result.skipped is True
         assert events == [("integrity", 1, 1)]
+
+    def test_stale_integrity_reingests_when_chroma_empty(self, tmp_path: Path) -> None:
+        """integrity 仍 success 但目标集合已无 chunk 时，不应跳过。"""
+
+        class _EmptyChroma:
+            def get_by_metadata(self, filters=None, trace=None, *, collection=None):
+                return []
+
+        source = tmp_path / "week1.pdf"
+        source.write_bytes(b"%PDF-1.4 week1")
+        pipeline = IngestionPipeline(
+            settings=load_settings(),
+            integrity_checker=_FakeIntegrity(skip=True),
+            loader=_FakeLoader(),
+            chunker=_FakeChunker(),
+            transforms=[_IdentityTransform()],
+            batch_processor=_FakeBatchProcessor(),
+            vector_store=_EmptyChroma(),
+            vector_upserter=_FakeUpserter(),
+            bm25_indexer=_FakeBM25(),
+        )
+        result = pipeline.run(str(source), collection="col_b", force=False)
+        assert result.skipped is False
+        assert result.chunk_count == 1
+
+    def test_second_ingest_appends_existing_bm25_json(self, tmp_path: Path) -> None:
+        """同一集合连续摄入两篇时，BM25 json 应保留两篇的 chunk。"""
+        from ingestion.storage.bm25_indexer import BM25Indexer
+
+        class _PathLoader:
+            def load(self, path: str) -> Document:
+                name = Path(path).stem
+                return Document(
+                    id=name,
+                    text=f"{name} azure document text",
+                    metadata={"source_path": path, "doc_type": "pdf", "doc_hash": name},
+                )
+
+        class _UniqueChunker:
+            def split_document(self, document: Document) -> list[Chunk]:
+                text = document.text
+                return [
+                    Chunk(
+                        id=f"{document.id}_0000",
+                        text=text,
+                        metadata={
+                            "source_path": document.metadata["source_path"],
+                            "chunk_index": 0,
+                        },
+                        start_offset=0,
+                        end_offset=len(text),
+                    )
+                ]
+
+        class _SparseBatchProcessor:
+            def process(self, chunks: Sequence[Chunk], trace: Any | None = None) -> BatchEncodingResult:
+                from ingestion.embedding.sparse_encoder import SparseEncoder
+
+                return BatchEncodingResult(
+                    dense_vectors=[[0.1, 0.2] for _ in chunks],
+                    sparse_stats=SparseEncoder().encode(chunks),
+                    batch_count=1,
+                )
+
+        bm25_root = tmp_path / "bm25"
+        pipeline = IngestionPipeline(
+            settings=load_settings(),
+            integrity_checker=_FakeIntegrity(skip=False),
+            loader=_PathLoader(),
+            chunker=_UniqueChunker(),
+            transforms=[_IdentityTransform()],
+            batch_processor=_SparseBatchProcessor(),
+            vector_upserter=_FakeUpserter(),
+            bm25_root=bm25_root,
+        )
+        first = tmp_path / "first.pdf"
+        second = tmp_path / "second.pdf"
+        first.write_bytes(b"%PDF-1.4 first")
+        second.write_bytes(b"%PDF-1.4 second")
+        pipeline.run(str(first), collection="col_a", force=True)
+        pipeline.run(str(second), collection="col_a", force=True)
+
+        indexer = BM25Indexer(collection="col_a", index_root=bm25_root)
+        indexer.load()
+        assert set(indexer._doc_lengths) == {"first_0000", "second_0000"}

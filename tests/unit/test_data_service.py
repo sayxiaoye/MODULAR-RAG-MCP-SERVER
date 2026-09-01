@@ -43,12 +43,21 @@ class FakeChroma:
         self,
         filters: Mapping[str, Any] | None = None,
         trace: Any | None = None,
+        *,
+        collection: str | None = None,
     ) -> list[dict[str, Any]]:
+        records = list(self.records)
+        if collection:
+            records = [
+                item
+                for item in records
+                if str(item.get("metadata", {}).get("collection") or "") == collection
+            ]
         if not filters:
-            return list(self.records)
+            return records
         return [
             item
-            for item in self.records
+            for item in records
             if all(item.get("metadata", {}).get(key) == value for key, value in filters.items())
         ]
 

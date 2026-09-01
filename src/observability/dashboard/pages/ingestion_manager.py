@@ -181,13 +181,14 @@ def _load_default_deps() -> tuple[IngestionPipeline, DocumentManager, DataServic
     images = ImageStorage()
     integrity = SQLiteIntegrityChecker()
     bm25 = BM25Indexer(collection=collection)
+    # 方案 B：ChromaStore 按方法参数选择 collection，可与 Pipeline 共用同一 PersistentClient。
     pipeline = IngestionPipeline(
         settings=settings,
         integrity_checker=integrity,
         image_storage=images,
         vector_store=chroma,
     )
-    manager = DocumentManager(chroma, bm25, images, integrity)
+    manager = DocumentManager(chroma, bm25, images, integrity)  # 下拉框默认项用
     data = DataService(
         chroma,
         images,
