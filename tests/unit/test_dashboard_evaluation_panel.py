@@ -93,6 +93,9 @@ class TestEvaluationPanelPage:
         assert "评估后端" in labels
         assert "Golden Test Set" in labels
         assert "运行评估" in [item.label for item in app.button]
+        assert "生成黄金集" in [item.label for item in app.button]
+        number_labels = [item.label for item in app.number_input]
+        assert "生成条数" in number_labels
         infos = [str(item.value) for item in app.info]
         assert not any("评估模块尚未启用" in text for text in infos)
 
@@ -196,6 +199,53 @@ class TestEvaluationPanelPage:
         assert not app.exception
         successes = [str(item.value) for item in app.success]
         assert any("集合 col_b" in text for text in successes)
+
+    def test_generate_adds_set_to_dropdown(self) -> None:
+        """生成黄金集后应写入 JSON，并出现在 Golden Test Set 下拉框。"""
+
+        def page_script() -> None:
+            from pathlib import Path
+            import tempfile
+
+            from core.settings import REPO_ROOT
+            from observability.dashboard.pages.evaluation_panel import render_evaluation_panel
+            from observability.evaluation.golden_generator import write_golden_test_set
+
+            out = Path(tempfile.gettempdir()) / "golden_gen_panel_ui.json"
+
+            def fake_generate(collection: str, count: int) -> Path:
+                write_golden_test_set(
+                    [
+                        {
+                            "query": "生成的问题？",
+                            "expected_chunk_ids": ["real-id-1"],
+                            "expected_sources": ["doc.pdf"],
+                        }
+                    ],
+                    out,
+                    collection=collection,
+                )
+                return out
+
+            render_evaluation_panel(
+                golden_sets=[REPO_ROOT / "tests" / "fixtures" / "golden_test_set.json"],
+                history_records=[],
+                collections=["col_a"],
+                generate_golden=fake_generate,
+                load_deps=False,
+            )
+
+        app = AppTest.from_function(page_script, default_timeout=30)
+        app.run()
+        assert not app.exception
+        gen = next(item for item in app.button if item.label == "生成黄金集")
+        gen.click().run()
+        assert not app.exception
+        successes = [str(item.value) for item in app.success]
+        assert any("已生成" in text and "golden_gen_panel_ui.json" in text for text in successes)
+        golden_box = next(item for item in app.selectbox if item.label == "Golden Test Set")
+        option_names = [golden_box.format_func(0), golden_box.format_func(1)]
+        assert any("golden_gen_panel_ui.json" in str(name) for name in option_names)
 
     def test_history_trend_when_two_records(self) -> None:
         """注入两条历史时应展示历史趋势标题，而非再跑一次的提示。"""

@@ -296,7 +296,7 @@ smart-knowledge-hub/
 │       │   │   ├── ingestion_manager.py # Ingestion 管理 (触发摄取/删除文档)
 │       │   │   ├── ingestion_traces.py  # Ingestion 追踪 (摄取历史与详情)
 │       │   │   ├── query_traces.py      # Query 追踪 (查询历史与详情)
-│       │   │   └── evaluation_panel.py  # 评估面板 (运行评估/查看指标)
+│       │   │   └── evaluation_panel.py  # 评估面板 (生成黄金集/运行评估/查看指标)
 │       │   └── services/                # Dashboard 数据服务层
 │       │       ├── trace_service.py     # Trace 读取服务 (解析 traces.jsonl)
 │       │       ├── data_service.py      # 数据浏览服务 (ChromaStore/ImageStorage)
@@ -304,6 +304,7 @@ smart-knowledge-hub/
 │       └── evaluation/                  # 评估模块
 │           ├── __init__.py
 │           ├── eval_runner.py           # 评估执行器
+│           ├── golden_generator.py      # 按集合生成黄金测试集（LLM 出题 + 真实 chunk_id）
 │           ├── ragas_evaluator.py       # Ragas 评估实现
 │           └── composite_evaluator.py   # 组合评估器 (多后端并行)
 
@@ -313,6 +314,8 @@ smart-knowledge-hub/
 │   │   └── {collection}/                # 按集合分类
 │   ├── images/                          # 提取的图片存放
 │   │   └── {collection}/                # 按集合分类（实际存储在 {doc_hash}/ 子目录下）
+│   ├── eval/                            # 评估产物（运行时生成，gitignore）
+│   │   └── golden_{collection}_{ts}.json  # 面板「生成黄金集」落盘，供下拉选择
 │   └── db/                              # 数据库与索引文件目录
 │       ├── ingestion_history.db         # 文件完整性历史记录 (SQLite)
 │       │                                # 表结构：PRIMARY KEY (file_hash, collection)，另含 file_path, status, processed_at
@@ -346,6 +349,7 @@ smart-knowledge-hub/
 │   │   ├── test_get_document_summary.py # E5: 文档摘要工具测试
 │   │   ├── test_trace_context.py        # F1: 追踪上下文测试
 │   │   ├── test_jsonl_logger.py         # F2: JSON Lines 日志测试
+│   │   ├── test_golden_generator.py     # 黄金集生成（取样/LLM 出题/落盘）
 │   │   └── ...                          # 其他已有单元测试
 │   ├── integration/                     # 集成测试
 │   │   ├── test_ingestion_pipeline.py
@@ -453,11 +457,12 @@ smart-knowledge-hub/
 | `dashboard/pages/ingestion_manager.py` | Ingestion 管理 | 文件上传，摄取触发（进度条），文档删除 |
 | `dashboard/pages/ingestion_traces.py` | Ingestion 追踪 | 摄取历史，阶段耗时瀑布图 |
 | `dashboard/pages/query_traces.py` | Query 追踪 | 查询历史，Dense/Sparse 对比，Rerank 变化 |
-| `dashboard/pages/evaluation_panel.py` | 评估面板 | 运行评估，指标展示，历史趋势（Phase H 实现） |
+| `dashboard/pages/evaluation_panel.py` | 评估面板 | 生成黄金集，运行评估，指标展示，历史趋势 |
 | `dashboard/services/trace_service.py` | Trace 数据服务 | 解析 traces.jsonl，按 trace_type 分类 |
 | `dashboard/services/data_service.py` | 数据浏览服务 | 封装 ChromaStore/ImageStorage 读取 |
 | `dashboard/services/config_service.py` | 配置读取服务 | 封装 Settings 展示 |
 | `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，指标计算，报告生成 |
+| `evaluation/golden_generator.py` | 黄金集生成 | 按集合取样 chunk，LLM 出题，真实 id 落盘 JSON |
 | `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision |
 | `evaluation/composite_evaluator.py` | 组合评估器 | 多后端并行执行，结果汇总 |
 

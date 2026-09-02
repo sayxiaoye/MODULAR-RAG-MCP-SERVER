@@ -11,7 +11,14 @@ from typing import Any, Callable, Mapping, Sequence
 import streamlit as st
 
 from core.settings import REPO_ROOT, Settings, load_settings, resolve_path
-from observability.evaluation.eval_runner import EvalReport, EvalRunner
+from observability.evaluation.eval_runner import EvalReport, EvalRunner, load_golden_test_set
+from observability.evaluation.golden_generator import (
+    DEFAULT_CASE_COUNT,
+    MAX_CASE_COUNT,
+    GoldenGeneratorError,
+    generate_golden_test_set,
+    generated_golden_dir,
+)
 
 # 与 spec 页面 6 一致：Ragas / Custom / All
 BACKEND_LABELS = ("Custom", "Ragas", "All")
@@ -23,6 +30,8 @@ _BACKEND_MAP: dict[str, list[str]] = {
 
 # (backend_label, test_set_path, collection) -> EvalReport
 RunEvalFn = Callable[[str, str, str], EvalReport]
+# (collection, count) -> 落盘路径
+GenerateGoldenFn = Callable[[str, int], Path]
 
 
 def backends_for_label(label: str) -> list[str]:
@@ -58,16 +67,18 @@ def discover_eval_collections(settings: Settings | None = None) -> list[str]:
 
 
 def default_golden_sets() -> list[Path]:
-    """发现可用的黄金测试集：默认 fixture + fixtures 目录中含 test_cases 的 JSON。"""
-    fixture_dir = REPO_ROOT / "tests" / "fixtures"
+    """发现可用的黄金测试集：仓库 fixture + data/eval 下生成的 JSON。"""
     found: list[Path] = []
     seen: set[Path] = set()
+    fixture_dir = REPO_ROOT / "tests" / "fixtures"
     preferred = fixture_dir / "golden_test_set.json"
     if preferred.is_file():
         found.append(preferred)
         seen.add(preferred.resolve())
-    if fixture_dir.is_dir():
-        for path in sorted(fixture_dir.glob("*.json")):
+    for directory in (fixture_dir, generated_golden_dir()):
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob("*.json")):
             resolved = path.resolve()
             if resolved in seen:
                 continue
@@ -128,6 +139,7 @@ def render_evaluation_panel(
     history_records: Sequence[Mapping[str, Any]] | None = None,
     history_path: Path | str | None = None,
     collections: Sequence[str] | None = None,
+    generate_golden: GenerateGoldenFn | None = None,
     *,
     load_deps: bool = True,
 ) -> None:
@@ -136,21 +148,17 @@ def render_evaluation_panel(
 
     Args:
         run_eval: ``(backend_label, test_set_path, collection) -> EvalReport``；测试注入 Fake。
-        golden_sets: 可选测试集路径列表；缺省扫描 fixtures。
+        golden_sets: 可选测试集路径列表；缺省扫描 fixtures 与 data/eval。
         history_records: 注入的历史记录（优先于读文件）。
         history_path: 历史 JSONL 路径；测试可指向临时文件。
         collections: 集合下拉选项；缺省且 ``load_deps`` 时从 Chroma 发现。
+        generate_golden: ``(collection, count) -> Path``；缺省调用 generate_golden_test_set。
         load_deps: 为 False 时不访问真实检索栈与默认 traces 目录。
     """
     st.header("评估面板")
-    st.caption("选择集合、评估后端与黄金测试集，运行后查看 hit_rate / mrr 及历史对比")
+    st.caption("选择集合生成黄金集，或选用已有 JSON 运行 hit_rate / mrr 评估")
 
-    sets = [Path(item) for item in golden_sets] if golden_sets is not None else []
-    if not sets and load_deps:
-        sets = default_golden_sets()
-    if not sets:
-        st.warning("未找到黄金测试集。请准备 tests/fixtures/golden_test_set.json。")
-        return
+    sets = _merge_golden_sets(golden_sets, load_deps=load_deps)
 
     collection_names = [str(item).strip() for item in collections or () if str(item).strip()]
     if not collection_names and load_deps:
@@ -160,13 +168,37 @@ def render_evaluation_panel(
 
     selected_collection = str(st.selectbox("集合", collection_names) or "").strip()
     backend = st.selectbox("评估后端", list(BACKEND_LABELS))
-    labels = [path.name for path in sets]
-    selected_index = st.selectbox(
-        "Golden Test Set",
-        list(range(len(sets))),
-        format_func=lambda index: labels[index],
+
+    st.subheader("黄金测试集")
+    case_count = int(
+        st.number_input(
+            "生成条数",
+            min_value=1,
+            max_value=MAX_CASE_COUNT,
+            value=DEFAULT_CASE_COUNT,
+            step=1,
+        )
     )
-    test_set_path = sets[int(selected_index)]
+    if st.button("生成黄金集"):
+        _handle_generate_golden(
+            selected_collection,
+            case_count,
+            generate_golden=generate_golden,
+            load_deps=load_deps,
+        )
+        sets = _merge_golden_sets(golden_sets, load_deps=load_deps)
+
+    if not sets:
+        st.warning("还没有黄金测试集。请选择集合后点击「生成黄金集」，或放入 JSON。")
+        test_set_path: Path | None = None
+    else:
+        labels = [path.name for path in sets]
+        selected_index = st.selectbox(
+            "Golden Test Set",
+            list(range(len(sets))),
+            format_func=lambda index: labels[index],
+        )
+        test_set_path = sets[int(selected_index)]
 
     resolved_history_path = Path(history_path) if history_path is not None else None
     if resolved_history_path is None and load_deps:
@@ -175,25 +207,27 @@ def render_evaluation_panel(
     if st.button("运行评估"):
         if not selected_collection:
             st.warning("请选择要评估的集合。")
-            return
-        runner = run_eval if run_eval is not None else _default_run_eval
-        try:
-            with st.spinner("正在运行评估…"):
-                report = runner(str(backend), str(test_set_path), selected_collection)
-        except Exception as exc:
-            st.error(f"评估失败: {exc}")
+        elif test_set_path is None:
+            st.warning("请先生成或选择黄金测试集。")
         else:
-            st.session_state["eval_last_report"] = report
-            record = _history_record(
-                str(backend), str(test_set_path), report, collection=selected_collection
-            )
-            st.session_state.setdefault("eval_history_extra", []).append(record)
-            if resolved_history_path is not None:
-                append_eval_history(resolved_history_path, record)
-            st.success(
-                f"评估完成：集合 {selected_collection} · {report.case_count} 条用例 · "
-                f"hit_rate={report.hit_rate:.4f} · mrr={report.mrr:.4f}"
-            )
+            runner = run_eval if run_eval is not None else _default_run_eval
+            try:
+                with st.spinner("正在运行评估…"):
+                    report = runner(str(backend), str(test_set_path), selected_collection)
+            except Exception as exc:
+                st.error(f"评估失败: {exc}")
+            else:
+                st.session_state["eval_last_report"] = report
+                record = _history_record(
+                    str(backend), str(test_set_path), report, collection=selected_collection
+                )
+                st.session_state.setdefault("eval_history_extra", []).append(record)
+                if resolved_history_path is not None:
+                    append_eval_history(resolved_history_path, record)
+                st.success(
+                    f"评估完成：集合 {selected_collection} · {report.case_count} 条用例 · "
+                    f"hit_rate={report.hit_rate:.4f} · mrr={report.mrr:.4f}"
+                )
 
     report = st.session_state.get("eval_last_report")
     if isinstance(report, EvalReport):
@@ -206,6 +240,80 @@ def render_evaluation_panel(
     if extras:
         history = list(history) + [item for item in extras if item not in history]
     _render_history(history)
+
+
+def _merge_golden_sets(
+    golden_sets: Sequence[Path | str] | None,
+    *,
+    load_deps: bool,
+) -> list[Path]:
+    """合并扫描结果、注入列表与本次会话新生成的路径。"""
+    found: list[Path] = []
+    seen: set[Path] = set()
+
+    def _add(path: Path) -> None:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in seen:
+            return
+        if path.is_file() and _looks_like_golden_set(path):
+            found.append(path)
+            seen.add(resolved)
+
+    if golden_sets is not None:
+        for item in golden_sets:
+            _add(Path(item))
+    elif load_deps:
+        for item in default_golden_sets():
+            _add(item)
+
+    extras = st.session_state.get("eval_generated_sets") or []
+    for item in extras:
+        _add(Path(item))
+    return found
+
+
+def _handle_generate_golden(
+    collection: str,
+    count: int,
+    *,
+    generate_golden: GenerateGoldenFn | None,
+    load_deps: bool,
+) -> None:
+    """从所选集合生成 N 条黄金用例并登记到下拉列表。"""
+    if not collection:
+        st.warning("请选择要生成黄金集的集合。")
+        return
+    runner = generate_golden
+    if runner is None:
+        if not load_deps:
+            st.warning("测试未注入生成器。")
+            return
+        runner = _default_generate_golden
+    try:
+        with st.spinner(f"正在从集合 {collection} 生成 {count} 条黄金用例…"):
+            path = runner(collection, count)
+    except GoldenGeneratorError as exc:
+        st.error(str(exc))
+        return
+    except Exception as exc:
+        st.error(f"生成黄金集失败: {exc}")
+        return
+    extras = list(st.session_state.get("eval_generated_sets") or [])
+    extras.append(str(path))
+    st.session_state["eval_generated_sets"] = extras
+    try:
+        written = len(load_golden_test_set(path))
+    except Exception:
+        written = count
+    st.success(f"已生成 {written} 条并写入 {Path(path).name}，可在下方下拉框选择。")
+
+
+def _default_generate_golden(collection: str, count: int) -> Path:
+    """面板默认生成入口：读当前 Settings 下的 Chroma 集合。"""
+    return generate_golden_test_set(collection, count)
 
 
 def render() -> None:
