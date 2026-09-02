@@ -148,6 +148,16 @@ def _optional_str_tuple(data: Dict[str, Any], key: str, path: str) -> tuple[str,
     return tuple(str(item) for item in value)
 
 
+def _optional_str_list(data: Dict[str, Any], key: str, path: str) -> Optional[List[str]]:
+    """可选字符串列表；缺省返回 None，便于「未配置则走 provider」。"""
+    if key not in data or data.get(key) is None:
+        return None
+    value = data[key]
+    if not isinstance(value, list):
+        raise SettingsError(f"Expected list for field: {path}.{key}")
+    return [str(item) for item in value]
+
+
 def _llamacpp_runtime_block(data: Dict[str, Any]) -> Dict[str, Any]:
     """读取可选的顶层 ``llamacpp`` 块，供 LLM/Embedding 共享 server_bin 等字段。"""
     raw = data.get("llamacpp")
@@ -259,11 +269,16 @@ class RerankSettings:
 
 @dataclass(frozen=True)
 class EvaluationSettings:
-    """RAG 评测配置，对应 ``evaluation`` 块。"""
+    """RAG 评测配置，对应 ``evaluation`` 块。
+
+    ``backends`` 为可选项：配置两项及以上时，工厂会组合成 CompositeEvaluator。
+    未配置则仍按 ``provider`` 创建单一评估器，保持向后兼容。
+    """
 
     enabled: bool
     provider: str
     metrics: List[str]
+    backends: Optional[List[str]] = None
 
 
 @dataclass(frozen=True)
@@ -438,6 +453,7 @@ class Settings:
                 enabled=_require_bool(evaluation, "enabled", "evaluation"),
                 provider=_require_str(evaluation, "provider", "evaluation"),
                 metrics=[str(item) for item in _require_list(evaluation, "metrics", "evaluation")],
+                backends=_optional_str_list(evaluation, "backends", "evaluation"),
             ),
             observability=ObservabilitySettings(
                 log_level=_require_str(observability, "log_level", "observability"),

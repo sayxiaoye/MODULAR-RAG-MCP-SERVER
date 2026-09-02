@@ -138,7 +138,7 @@
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | H1 | RagasEvaluator 实现 | [x] | 2026-09-01 | RagasEvaluator + 工厂注册 ragas + mock 评估，7个单元测试 |
-| H2 | CompositeEvaluator 实现 | [ ] | | |
+| H2 | CompositeEvaluator 实现 | [x] | 2026-09-02 | CompositeEvaluator + backends 工厂组合 + 11个单元测试 |
 | H3 | EvalRunner + Golden Test Set | [ ] | | |
 | H4 | 评估面板页面 | [ ] | | |
 | H5 | Recall 回归测试（E2E） | [ ] | | |
@@ -166,9 +166,9 @@
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
-| 阶段 H | 5 | 1 | 20% |
+| 阶段 H | 5 | 2 | 40% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **62** | **87%** |
+| **总计** | **71** | **63** | **89%** |
 
 
 ---
@@ -1210,7 +1210,7 @@
 - **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典。
 - **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py`。
 
-### H2：CompositeEvaluator 实现
+### H2：CompositeEvaluator 实现 ✅
 - **目标**：实现 `composite_evaluator.py`：组合多个 Evaluator 并行执行，汇总结果。
 - **修改文件**：
   - `src/observability/evaluation/composite_evaluator.py`（新增）

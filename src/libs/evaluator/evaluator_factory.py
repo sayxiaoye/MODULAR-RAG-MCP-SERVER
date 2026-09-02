@@ -1,4 +1,4 @@
-"""Evaluator 工厂：按 settings.evaluation.provider 路由到具体评估实现。"""
+"""Evaluator 工厂：按 provider 或 backends 列表路由到具体评估实现。"""
 
 from __future__ import annotations
 
@@ -7,6 +7,11 @@ from typing import Callable, Dict, Type
 from core.settings import EvaluationSettings, Settings
 from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError
 from libs.evaluator.custom_evaluator import CustomEvaluator
+
+# spec 技术栈写 custom_metrics，注册表键为 custom
+_BACKEND_ALIASES: Dict[str, str] = {
+    "custom_metrics": "custom",
+}
 
 
 class EvaluatorFactoryError(EvaluatorError):
@@ -33,15 +38,48 @@ def _register_builtin_providers() -> None:
     register_evaluator("ragas", RagasEvaluator)
 
 
-def _default_constructor(settings: EvaluationSettings) -> BaseEvaluator:
-    """根据 evaluation.provider 选择已注册实现。"""
-    provider = settings.provider.strip().lower()
+def _normalize_backend(name: str) -> str:
+    """统一大小写，并把 spec 别名映射到注册表键。"""
+    key = name.strip().lower()
+    return _BACKEND_ALIASES.get(key, key)
+
+
+def _resolve_backend_names(settings: EvaluationSettings) -> list[str]:
+    """从 backends 取出去重后的名称；未配置则空列表（改走 provider）。"""
+    raw_backends = settings.backends or []
+    names: list[str] = []
+    seen: set[str] = set()
+    for item in raw_backends:
+        key = _normalize_backend(str(item))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        names.append(key)
+    return names
+
+
+def _construct_evaluator(settings: EvaluationSettings, provider: str) -> BaseEvaluator:
+    """按已归一化的 provider 名实例化注册表中的实现。"""
     if provider not in _EVALUATOR_REGISTRY:
         known = ", ".join(sorted(_EVALUATOR_REGISTRY)) or "（无）"
         raise EvaluatorFactoryError(
-            f"未知的 Evaluator provider: {settings.provider!r}，已注册: {known}"
+            f"未知的 Evaluator provider: {provider!r}，已注册: {known}"
         )
     return _EVALUATOR_REGISTRY[provider](settings)
+
+
+def _default_constructor(settings: EvaluationSettings) -> BaseEvaluator:
+    """backends 两项及以上则组合；一项用该 backend；否则回退 provider。"""
+    names = _resolve_backend_names(settings)
+    if len(names) >= 2:
+        # 延迟导入，避免 factory ↔ evaluation 包循环
+        from observability.evaluation.composite_evaluator import CompositeEvaluator
+
+        evaluators = [_construct_evaluator(settings, name) for name in names]
+        return CompositeEvaluator(evaluators)
+    if len(names) == 1:
+        return _construct_evaluator(settings, names[0])
+    return _construct_evaluator(settings, _normalize_backend(settings.provider))
 
 
 class EvaluatorFactory:
