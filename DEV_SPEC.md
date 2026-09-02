@@ -2082,7 +2082,7 @@ dashboard:
 | H1 | RagasEvaluator 实现 | [x] | 2026-09-01 | RagasEvaluator + 工厂注册 ragas + mock 评估，7个单元测试 |
 | H2 | CompositeEvaluator 实现 | [x] | 2026-09-02 | CompositeEvaluator + backends 工厂组合 + 11个单元测试 |
 | H3 | EvalRunner + Golden Test Set | [x] | 2026-09-02 | EvalRunner + golden_test_set + evaluate.py + 9个单元测试 |
-| H4 | 评估面板页面 | [ ] | | |
+| H4 | 评估面板页面 | [x] | 2026-09-02 | 评估面板 + 运行/指标/历史趋势 + 5个单元测试 |
 | H5 | Recall 回归测试（E2E） | [ ] | | |
 
 #### 阶段 I：端到端验收与文档收口
@@ -2108,9 +2108,9 @@ dashboard:
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
-| 阶段 H | 5 | 3 | 60% |
+| 阶段 H | 5 | 4 | 80% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **64** | **90%** |
+| **总计** | **71** | **65** | **92%** |
 
 
 ---
@@ -3190,7 +3190,7 @@ dashboard:
 - **验收标准**：`python scripts/evaluate.py` 可运行，输出 metrics。
 - **测试方法**：`pytest -q tests/integration/test_hybrid_search.py` 或 `python scripts/evaluate.py`。
 
-### H4：评估面板页面
+### H4：评估面板页面 ✅
 - **目标**：实现 Dashboard 评估面板页面（运行评估、查看指标、历史对比）。
 - **前置依赖**：H3（EvalRunner）、G1（Dashboard 架构）
 - **修改文件**：
