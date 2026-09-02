@@ -26,6 +26,13 @@ def register_evaluator(name: str, implementation: Type[BaseEvaluator]) -> None:
     _EVALUATOR_REGISTRY[key] = implementation
 
 
+def _register_builtin_providers() -> None:
+    """注册 H1 内置 ragas 实现；延迟导入以免循环依赖。"""
+    from observability.evaluation.ragas_evaluator import RagasEvaluator
+
+    register_evaluator("ragas", RagasEvaluator)
+
+
 def _default_constructor(settings: EvaluationSettings) -> BaseEvaluator:
     """根据 evaluation.provider 选择已注册实现。"""
     provider = settings.provider.strip().lower()
@@ -56,3 +63,6 @@ class EvaluatorFactory:
     def reset_constructor(cls) -> None:
         """恢复默认构造逻辑。"""
         cls._constructor = _default_constructor
+
+
+_register_builtin_providers()

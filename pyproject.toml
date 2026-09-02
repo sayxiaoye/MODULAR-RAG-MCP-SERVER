@@ -29,6 +29,11 @@ rerank = [
 ingestion = [
     "markitdown[pdf]>=0.1.0",
 ]
+evaluation = [
+    "ragas>=0.2.15,<0.3",
+    "datasets>=4.0.0",
+    "langchain-community>=0.3,<0.4",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

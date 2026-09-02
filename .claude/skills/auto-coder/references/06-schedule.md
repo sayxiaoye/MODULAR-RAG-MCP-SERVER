@@ -137,7 +137,7 @@
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| H1 | RagasEvaluator 实现 | [ ] | | |
+| H1 | RagasEvaluator 实现 | [x] | 2026-09-01 | RagasEvaluator + 工厂注册 ragas + mock 评估，7个单元测试 |
 | H2 | CompositeEvaluator 实现 | [ ] | | |
 | H3 | EvalRunner + Golden Test Set | [ ] | | |
 | H4 | 评估面板页面 | [ ] | | |
@@ -166,9 +166,9 @@
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
-| 阶段 H | 5 | 0 | 0% |
+| 阶段 H | 5 | 1 | 20% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **61** | **86%** |
+| **总计** | **71** | **62** | **87%** |
 
 
 ---
@@ -1197,7 +1197,7 @@
 
 ## 阶段 H：评估体系（目标：可插拔评估 + 可量化回归）
 
-### H1：RagasEvaluator 实现
+### H1：RagasEvaluator 实现 ✅
 - **目标**：实现 `ragas_evaluator.py`：封装 Ragas 框架，实现 `BaseEvaluator` 接口。
 - **修改文件**：
   - `src/observability/evaluation/ragas_evaluator.py`（新增）
