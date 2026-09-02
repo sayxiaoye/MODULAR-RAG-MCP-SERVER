@@ -1,0 +1,14 @@
+{
+  "test_cases": [
+    {
+      "query": "如何配置 Azure OpenAI？",
+      "expected_chunk_ids": ["chunk_abc_001", "chunk_abc_002"],
+      "expected_sources": ["config_guide.pdf"]
+    },
+    {
+      "query": "Hybrid Search 如何融合 Dense 与 Sparse？",
+      "expected_chunk_ids": ["chunk_hybrid_001"],
+      "expected_sources": ["retrieval_guide.md"]
+    }
+  ]
+}
