@@ -13,6 +13,7 @@ from streamlit.testing.v1 import AppTest
 from observability.dashboard.pages.evaluation_panel import (
     append_eval_history,
     backends_for_label,
+    discover_eval_collections,
     load_eval_history,
 )
 
@@ -26,6 +27,28 @@ class TestEvaluationBackends:
         assert backends_for_label("Custom") == ["custom"]
         assert backends_for_label("Ragas") == ["ragas"]
         assert backends_for_label("All") == ["ragas", "custom"]
+
+
+@pytest.mark.unit
+class TestDiscoverEvalCollections:
+    """验证评估面板集合列表：yaml 默认在前，并合并 Chroma 已有名称。"""
+
+    def test_yaml_default_first_then_chroma_names(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """knowledge_hub 应排在最前，其余集合去重后跟上。"""
+
+        class FakeService:
+            def list_collections(self) -> list[str]:
+                return ["col_b", "knowledge_hub", "col_a"]
+
+        monkeypatch.setattr(
+            "observability.dashboard.services.data_service.DataService.from_settings",
+            classmethod(lambda cls, settings=None: FakeService()),
+        )
+        names = discover_eval_collections()
+        assert names[0] == "knowledge_hub"
+        assert "col_a" in names
+        assert "col_b" in names
+        assert names.count("knowledge_hub") == 1
 
 
 @pytest.mark.unit
@@ -58,6 +81,7 @@ class TestEvaluationPanelPage:
             render_evaluation_panel(
                 golden_sets=[REPO_ROOT / "tests" / "fixtures" / "golden_test_set.json"],
                 history_records=[],
+                collections=["knowledge_hub", "col_a"],
                 load_deps=False,
             )
 
@@ -65,6 +89,7 @@ class TestEvaluationPanelPage:
         app.run()
         assert not app.exception
         labels = [item.label for item in app.selectbox]
+        assert "集合" in labels
         assert "评估后端" in labels
         assert "Golden Test Set" in labels
         assert "运行评估" in [item.label for item in app.button]
@@ -82,7 +107,7 @@ class TestEvaluationPanelPage:
             from observability.dashboard.pages.evaluation_panel import render_evaluation_panel
             from observability.evaluation.eval_runner import EvalCaseResult, EvalReport
 
-            def fake_run(backend: str, test_set: str) -> EvalReport:
+            def fake_run(backend: str, test_set: str, collection: str) -> EvalReport:
                 return EvalReport(
                     hit_rate=0.5,
                     mrr=0.5,
@@ -113,6 +138,7 @@ class TestEvaluationPanelPage:
                 golden_sets=[REPO_ROOT / "tests" / "fixtures" / "golden_test_set.json"],
                 history_path=Path(tempfile.gettempdir()) / "eval_panel_test_history.jsonl",
                 history_records=[],
+                collections=["col_a"],
                 load_deps=False,
             )
 
@@ -127,8 +153,49 @@ class TestEvaluationPanelPage:
         assert "mrr" in metric_labels
         successes = [str(item.value) for item in app.success]
         assert any("评估完成" in text for text in successes)
+        assert any("集合 col_a" in text for text in successes)
         body = " ".join(str(item.value) for item in app.markdown)
         assert "各 query 明细" in body
+
+    def test_run_uses_selected_collection(self) -> None:
+        """下拉选中的集合应传入 run_eval。"""
+
+        def page_script() -> None:
+            from pathlib import Path
+            import tempfile
+
+            from core.settings import REPO_ROOT
+            from observability.dashboard.pages.evaluation_panel import render_evaluation_panel
+            from observability.evaluation.eval_runner import EvalReport
+
+            def fake_run(backend: str, test_set: str, collection: str) -> EvalReport:
+                return EvalReport(
+                    hit_rate=0.0,
+                    mrr=0.0,
+                    case_count=0,
+                    metrics={"hit_rate": 0.0, "mrr": 0.0},
+                    cases=[],
+                )
+
+            render_evaluation_panel(
+                run_eval=fake_run,
+                golden_sets=[REPO_ROOT / "tests" / "fixtures" / "golden_test_set.json"],
+                history_path=Path(tempfile.gettempdir()) / "eval_panel_collection_history.jsonl",
+                history_records=[],
+                collections=["col_a", "col_b"],
+                load_deps=False,
+            )
+
+        app = AppTest.from_function(page_script, default_timeout=30)
+        app.run()
+        assert not app.exception
+        picker = next(item for item in app.selectbox if item.label == "集合")
+        picker.select("col_b").run()
+        run = next(item for item in app.button if item.label == "运行评估")
+        run.click().run()
+        assert not app.exception
+        successes = [str(item.value) for item in app.success]
+        assert any("集合 col_b" in text for text in successes)
 
     def test_history_trend_when_two_records(self) -> None:
         """注入两条历史时应展示历史趋势标题，而非再跑一次的提示。"""

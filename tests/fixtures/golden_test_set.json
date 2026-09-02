@@ -9,6 +9,16 @@
       "query": "Hybrid Search 如何融合 Dense 与 Sparse？",
       "expected_chunk_ids": ["chunk_hybrid_001"],
       "expected_sources": ["retrieval_guide.md"]
+    },
+    {
+      "query": "BM25 如何用 jieba 做中文分词？",
+      "expected_chunk_ids": ["chunk_bm25_001"],
+      "expected_sources": ["bm25_guide.pdf"]
+    },
+    {
+      "query": "Rerank 阶段 Cross-Encoder 的作用是什么？",
+      "expected_chunk_ids": ["chunk_rerank_001"],
+      "expected_sources": ["rerank_guide.md"]
     }
   ]
 }

@@ -815,7 +815,7 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - **最终结果表**：展示 Top-K 候选文档的标题、分数、来源。
 
 **页面 6：评估面板 (Evaluation Panel)**
-- **评估运行**：选择评估后端（Ragas / Custom / All）与 golden test set，点击运行。
+- **评估运行**：选择**集合**（与摄取/CLI `--collection` 同一逻辑名）、评估后端（Ragas / Custom / All）与 golden test set，点击运行。
 - **指标展示**：以表格和图表展示 hit_rate、mrr、faithfulness 等指标。
 - **历史趋势**：对比不同时间的评估结果，观察策略调整的效果。
 - **注意**：评估面板在 Phase H 实现，Phase G 完成后该页面显示"评估模块尚未启用"的占位提示。
@@ -2083,9 +2083,9 @@ dashboard:
 | H2 | CompositeEvaluator 实现 | [x] | 2026-09-02 | CompositeEvaluator + backends 工厂组合 + 11个单元测试 |
 | H3 | EvalRunner + Golden Test Set | [x] | 2026-09-02 | EvalRunner + golden_test_set + evaluate.py + 9个单元测试 |
 | H4 | 评估面板页面 | [x] | 2026-09-02 | 评估面板 + 运行/指标/历史趋势 + 5个单元测试 |
-| H5 | Recall 回归测试（E2E） | [ ] | | |
+| H5 | Recall 回归测试（E2E） | [x] | 2026-09-02 | EvalRunner hit@k>=0.8 + golden 补齐4条 + 2个E2E测试 |
 
-#### 阶段 I：端到端验收与文档收口
+#### 阶段 I：端到端验收与文档收口 
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
@@ -2108,9 +2108,9 @@ dashboard:
 | 阶段 E | 6 | 6 | 100% |
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
-| 阶段 H | 5 | 4 | 80% |
+| 阶段 H | 5 | 5 | 100% |
 | 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **65** | **92%** |
+| **总计** | **71** | **66** | **93%** |
 
 
 ---
@@ -3196,13 +3196,13 @@ dashboard:
 - **修改文件**：
   - `src/observability/dashboard/pages/evaluation_panel.py`（实现：替换占位提示）
 - **实现要点**：
-  - 选择评估后端与 golden test set
+  - 选择**集合**（与 CLI `--collection` 对齐）、评估后端与 golden test set
   - 点击运行，展示评估结果（hit_rate、mrr、各 query 明细）
   - 可选：历史评估结果对比图
 - **验收标准**：可在 Dashboard 中运行评估并查看指标。
 - **测试方法**：手动验证。
 
-### H5：Recall 回归测试（E2E）
+### H5：Recall 回归测试（E2E） ✅
 - **目标**：实现 `tests/e2e/test_recall.py`：基于 golden set 做最小召回阈值（例如 hit@k）。
 - **前置依赖**：H3（EvalRunner + golden_test_set）
 - **修改文件**：

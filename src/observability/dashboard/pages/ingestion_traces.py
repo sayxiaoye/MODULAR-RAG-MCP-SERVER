@@ -44,7 +44,7 @@ def render_ingestion_traces(
         return
 
     st.subheader("摄取历史")
-    st.dataframe(_history_table(traces), use_container_width=True, hide_index=True)
+    st.dataframe(_history_table(traces), width="stretch", hide_index=True)
 
     labels = [
         f"{item.source_name} · {item.status} · {item.total_elapsed_ms:.1f} ms"

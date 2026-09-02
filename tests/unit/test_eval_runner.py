@@ -205,7 +205,7 @@ class TestEvaluateCli:
         assert code == 0
         assert "hit_rate:" in output
         assert "mrr:" in output
-        assert "cases: 2" in output
+        assert "cases: 4" in output
 
     def test_run_evaluate_missing_set_returns_error(self, tmp_path: Path) -> None:
         """测试集不存在时应返回退出码 1。"""

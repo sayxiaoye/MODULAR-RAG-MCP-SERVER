@@ -21,7 +21,8 @@ _BACKEND_MAP: dict[str, list[str]] = {
     "All": ["ragas", "custom"],
 }
 
-RunEvalFn = Callable[[str, str], EvalReport]
+# (backend_label, test_set_path, collection) -> EvalReport
+RunEvalFn = Callable[[str, str, str], EvalReport]
 
 
 def backends_for_label(label: str) -> list[str]:
@@ -30,6 +31,30 @@ def backends_for_label(label: str) -> list[str]:
     if key not in _BACKEND_MAP:
         raise ValueError(f"未知评估后端: {label!r}")
     return list(_BACKEND_MAP[key])
+
+
+def discover_eval_collections(settings: Settings | None = None) -> list[str]:
+    """列出可供评估的逻辑集合：yaml 默认在前，其余为 Chroma 已有名称。"""
+    resolved = settings or load_settings()
+    preferred = (resolved.vector_store.collection_name or "").strip() or "knowledge_hub"
+    names: list[str] = []
+    try:
+        from observability.dashboard.services.data_service import DataService
+
+        names = [
+            str(item).strip()
+            for item in DataService.from_settings(resolved).list_collections()
+            if str(item).strip()
+        ]
+    except Exception:
+        names = []
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for name in [preferred, *names]:
+        if name and name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered or [preferred]
 
 
 def default_golden_sets() -> list[Path]:
@@ -102,6 +127,7 @@ def render_evaluation_panel(
     golden_sets: Sequence[Path | str] | None = None,
     history_records: Sequence[Mapping[str, Any]] | None = None,
     history_path: Path | str | None = None,
+    collections: Sequence[str] | None = None,
     *,
     load_deps: bool = True,
 ) -> None:
@@ -109,14 +135,15 @@ def render_evaluation_panel(
     渲染评估面板。
 
     Args:
-        run_eval: ``(backend_label, test_set_path) -> EvalReport``；测试注入 Fake。
+        run_eval: ``(backend_label, test_set_path, collection) -> EvalReport``；测试注入 Fake。
         golden_sets: 可选测试集路径列表；缺省扫描 fixtures。
         history_records: 注入的历史记录（优先于读文件）。
         history_path: 历史 JSONL 路径；测试可指向临时文件。
+        collections: 集合下拉选项；缺省且 ``load_deps`` 时从 Chroma 发现。
         load_deps: 为 False 时不访问真实检索栈与默认 traces 目录。
     """
     st.header("评估面板")
-    st.caption("选择评估后端与黄金测试集，运行后查看 hit_rate / mrr 及历史对比")
+    st.caption("选择集合、评估后端与黄金测试集，运行后查看 hit_rate / mrr 及历史对比")
 
     sets = [Path(item) for item in golden_sets] if golden_sets is not None else []
     if not sets and load_deps:
@@ -125,6 +152,13 @@ def render_evaluation_panel(
         st.warning("未找到黄金测试集。请准备 tests/fixtures/golden_test_set.json。")
         return
 
+    collection_names = [str(item).strip() for item in collections or () if str(item).strip()]
+    if not collection_names and load_deps:
+        collection_names = discover_eval_collections()
+    if not collection_names:
+        collection_names = ["knowledge_hub"]
+
+    selected_collection = str(st.selectbox("集合", collection_names) or "").strip()
     backend = st.selectbox("评估后端", list(BACKEND_LABELS))
     labels = [path.name for path in sets]
     selected_index = st.selectbox(
@@ -139,20 +173,25 @@ def render_evaluation_panel(
         resolved_history_path = default_history_path()
 
     if st.button("运行评估"):
+        if not selected_collection:
+            st.warning("请选择要评估的集合。")
+            return
         runner = run_eval if run_eval is not None else _default_run_eval
         try:
             with st.spinner("正在运行评估…"):
-                report = runner(str(backend), str(test_set_path))
+                report = runner(str(backend), str(test_set_path), selected_collection)
         except Exception as exc:
             st.error(f"评估失败: {exc}")
         else:
             st.session_state["eval_last_report"] = report
-            record = _history_record(str(backend), str(test_set_path), report)
+            record = _history_record(
+                str(backend), str(test_set_path), report, collection=selected_collection
+            )
             st.session_state.setdefault("eval_history_extra", []).append(record)
             if resolved_history_path is not None:
                 append_eval_history(resolved_history_path, record)
             st.success(
-                f"评估完成：{report.case_count} 条用例 · "
+                f"评估完成：集合 {selected_collection} · {report.case_count} 条用例 · "
                 f"hit_rate={report.hit_rate:.4f} · mrr={report.mrr:.4f}"
             )
 
@@ -183,8 +222,8 @@ def _looks_like_golden_set(path: Path) -> bool:
     return isinstance(payload, Mapping) and isinstance(payload.get("test_cases"), list)
 
 
-def _default_run_eval(backend_label: str, test_set_path: str) -> EvalReport:
-    """用当前 Settings + HybridSearch + 工厂评估器跑黄金集。"""
+def _default_run_eval(backend_label: str, test_set_path: str, collection: str) -> EvalReport:
+    """用所选集合组装 HybridSearch，与 CLI ``--collection`` 对齐。"""
     from core.query_engine.dense_retriever import DenseRetriever
     from core.query_engine.hybrid_search import HybridSearch
     from core.query_engine.query_pipeline import settings_for_query
@@ -196,7 +235,8 @@ def _default_run_eval(backend_label: str, test_set_path: str) -> EvalReport:
     base = load_settings()
     names = backends_for_label(backend_label)
     tuned = settings_with_backends(base, names)
-    settings, bm25_root = settings_for_query(tuned, None, None)
+    target = (collection or "").strip() or None
+    settings, bm25_root = settings_for_query(tuned, target, None)
     vector_store = VectorStoreFactory.create(settings)
     indexer = BM25Indexer(
         collection=settings.vector_store.collection_name,
@@ -219,12 +259,19 @@ def _default_run_eval(backend_label: str, test_set_path: str) -> EvalReport:
     return EvalRunner(settings, hybrid_search, evaluator).run(test_set_path)
 
 
-def _history_record(backend: str, test_set_path: str, report: EvalReport) -> dict[str, Any]:
+def _history_record(
+    backend: str,
+    test_set_path: str,
+    report: EvalReport,
+    *,
+    collection: str = "",
+) -> dict[str, Any]:
     """把本次报告压成历史趋势可用的摘要。"""
     return {
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "backend": backend,
         "test_set": test_set_path,
+        "collection": collection,
         "hit_rate": report.hit_rate,
         "mrr": report.mrr,
         "case_count": report.case_count,
@@ -295,6 +342,7 @@ def _render_history(records: Sequence[Mapping[str, Any]]) -> None:
         [
             {
                 "时间": str(item.get("ran_at") or "—"),
+                "集合": str(item.get("collection") or "—"),
                 "后端": str(item.get("backend") or "—"),
                 "hit_rate": item.get("hit_rate"),
                 "mrr": item.get("mrr"),

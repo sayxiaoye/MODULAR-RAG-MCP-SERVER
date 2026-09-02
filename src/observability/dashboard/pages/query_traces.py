@@ -47,7 +47,7 @@ def render_query_traces(
         return
 
     st.subheader("查询历史")
-    st.dataframe(_history_table(traces), use_container_width=True, hide_index=True)
+    st.dataframe(_history_table(traces), width="stretch", hide_index=True)
 
     labels = [
         f"{(item.query_text or item.trace_id)[:48]} · {item.total_elapsed_ms:.1f} ms"
@@ -104,20 +104,20 @@ def _render_trace_detail(trace: TraceRecord) -> None:
         col_dense, col_sparse = st.columns(2)
         with col_dense:
             st.caption("Dense Top-N")
-            st.dataframe(_hits_table(dense_hits), use_container_width=True, hide_index=True)
+            st.dataframe(_hits_table(dense_hits), width="stretch", hide_index=True)
         with col_sparse:
             st.caption("Sparse Top-N")
-            st.dataframe(_hits_table(sparse_hits), use_container_width=True, hide_index=True)
+            st.dataframe(_hits_table(sparse_hits), width="stretch", hide_index=True)
 
     changes = trace.rerank_rank_changes()
     if changes:
         st.markdown("**Rerank 前后排名变化**")
-        st.dataframe(_rank_change_table(changes), use_container_width=True, hide_index=True)
+        st.dataframe(_rank_change_table(changes), width="stretch", hide_index=True)
 
     final_hits = trace.lane_hits("rerank") or trace.lane_hits("fusion")
     if final_hits:
         st.markdown("**最终结果 Top-K**")
-        st.dataframe(_hits_table(final_hits), use_container_width=True, hide_index=True)
+        st.dataframe(_hits_table(final_hits), width="stretch", hide_index=True)
 
     st.markdown("**各阶段详情**")
     for stage in trace.stages:
