@@ -2111,7 +2111,7 @@ dashboard:
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
 | I1 | E2E：MCP Client 侧调用模拟 | [x] | 2026-09-03 | 子进程 Stdio tools/list + query_knowledge_hub citations，2个E2E测试 |
-| I2 | E2E：Dashboard 冒烟测试 | [ ] | | |
+| I2 | E2E：Dashboard 冒烟测试 | [x] | 2026-09-03 | 六页面 AppTest 有数据渲染 + app.py 入口，7个E2E测试 |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [ ] | | |
 | I4 | 清理接口一致性（契约测试补齐） | [ ] | | |
 | I5 | 全链路 E2E 验收 | [ ] | | |
@@ -2130,8 +2130,8 @@ dashboard:
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 5 | 100% |
-| 阶段 I | 5 | 1 | 20% |
-| **总计** | **71** | **67** | **94%** |
+| 阶段 I | 5 | 2 | 40% |
+| **总计** | **71** | **68** | **96%** |
 
 
 ---
@@ -3253,7 +3253,7 @@ dashboard:
 - **验收标准**：完整走通 query_knowledge_hub 并返回 citations。
 - **测试方法**：`pytest -q tests/e2e/test_mcp_client.py`。
 
-### I2：E2E：Dashboard 冒烟测试
+### I2：E2E：Dashboard 冒烟测试 ✅
 - **目标**：验证 Dashboard 各页面在有数据时可正常渲染、无 Python 异常。
 - **修改文件**：
   - `tests/e2e/test_dashboard_smoke.py`（新增）
