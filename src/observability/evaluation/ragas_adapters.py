@@ -35,6 +35,7 @@ def wrap_project_llm_for_ragas(llm: Any) -> Any:
             "未安装 Ragas。请执行: python -m pip install '.[evaluation]'"
         ) from exc
 
+    _enable_structured_json_output(llm)
     if hasattr(llm, "chat") and not hasattr(llm, "generate_prompt"):
         return LangchainLLMWrapper(_build_chat_model(llm))
     return LangchainLLMWrapper(llm)
@@ -101,6 +102,9 @@ def _build_chat_model(client: Any) -> Any:
             converted = _langchain_messages_to_chat(messages)
             response = self.client.chat(converted)
             text = (getattr(response, "content", None) or str(response) or "").strip() or " "
+            from observability.evaluation.cjk_text import sanitize_judge_output
+
+            text = sanitize_judge_output(text).strip() or " "
             return ChatResult(generations=[ChatGeneration(message=AIMessage(content=text))])
 
     return ProjectChatModel(client=client)
@@ -133,6 +137,23 @@ def _build_embeddings(inner: Any) -> Any:
             return self._inner.embed([cleaned])[0]
 
     return ProjectEmbeddings(inner)
+
+
+def _enable_structured_json_output(llm: Any) -> None:
+    """本地 llama.cpp 用 GBNF 锁 JSON；其它 OpenAI 兼容端用 response_format。"""
+    extra: dict[str, Any]
+    provider = str(getattr(llm, "provider_name", "") or "").lower()
+    type_name = type(llm).__name__.lower()
+    if provider == "llamacpp" or type_name == "llamacppllm":
+        from observability.evaluation.json_grammar import JSON_OBJECT_GBNF
+
+        extra = {"grammar": JSON_OBJECT_GBNF}
+    else:
+        extra = {"response_format": {"type": "json_object"}}
+    try:
+        llm.extra_chat_payload = extra
+    except Exception:
+        return
 
 
 def _langchain_messages_to_chat(messages: list[Any]) -> list[dict[str, str]]:

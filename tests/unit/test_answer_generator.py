@@ -85,3 +85,15 @@ class TestRagasAdapters:
         vectors = wrapped.embed_documents(["hello"])
         assert vectors[0][0] == float(len("hello"))
         assert inner.calls == [["hello"]]
+
+    def test_llamacpp_judge_gets_json_grammar(self) -> None:
+        """llamacpp Judge 应带 GBNF，把输出锁成 JSON 对象。"""
+        from observability.evaluation.json_grammar import JSON_OBJECT_GBNF
+        from observability.evaluation.ragas_adapters import _enable_structured_json_output
+
+        class _Llama:
+            provider_name = "llamacpp"
+
+        llm = _Llama()
+        _enable_structured_json_output(llm)
+        assert llm.extra_chat_payload["grammar"] == JSON_OBJECT_GBNF

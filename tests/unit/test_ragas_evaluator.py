@@ -9,7 +9,7 @@ from typing import Any, Mapping
 import pytest
 
 from core.settings import EvaluationSettings, Settings, load_settings
-from libs.evaluator.base_evaluator import EvaluatorError
+from libs.evaluator.base_evaluator import EvaluatorError, PartialEvaluatorError
 from libs.evaluator.evaluator_factory import EvaluatorFactory, EvaluatorFactoryError
 from observability.evaluation.ragas_evaluator import RagasEvaluator, _run_sync_in_fresh_loop
 
@@ -133,6 +133,28 @@ class TestRagasEvaluator:
         assert seen["embeddings"] is marker_emb
         assert seen["answer"] == "generated"
 
+    def test_judge_payload_normalizes_japanese_quotes(self) -> None:
+        """送进 Judge 的答案应去掉「」，保留假名。"""
+        seen: dict[str, Any] = {}
+
+        def _capture(
+            payload: Mapping[str, Any],
+            llm: Any | None = None,
+            embeddings: Any | None = None,
+        ) -> dict[str, float]:
+            seen["answer"] = payload["answer"]
+            return {"faithfulness": 1.0}
+
+        evaluator = RagasEvaluator(evaluate_fn=_capture)
+        evaluator.evaluate(
+            "忧郁是什么意思？",
+            ["a"],
+            ["a"],
+            answer="「憂鬱（ゆううつ）」表示心情低落。",
+        )
+        assert "「" not in seen["answer"]
+        assert "ゆううつ" in seen["answer"]
+
     def test_requires_generated_answer(self) -> None:
         """Ragas 路径需要评估前生成答案。"""
         assert RagasEvaluator(evaluate_fn=_fake_ragas_scores).requires_generated_answer is True
@@ -152,8 +174,39 @@ class TestRagasEvaluator:
             }
 
         evaluator = RagasEvaluator(evaluate_fn=_nan_scores)
-        with pytest.raises(EvaluatorError, match="faithfulness"):
+        with pytest.raises(EvaluatorError, match="有效指标"):
             evaluator.evaluate("q", ["a"], ["a"], answer="x")
+
+    def test_partial_metrics_raise_partial_error(self) -> None:
+        """faithfulness 成功、其它失败时应保留已有分数。"""
+
+        def _partial(
+            payload: Mapping[str, Any],
+            llm: Any | None = None,
+            embeddings: Any | None = None,
+        ) -> dict[str, Any]:
+            return {
+                "faithfulness": 0.88,
+                "_metric_errors": ["answer_relevancy: RagasOutputParserException"],
+            }
+
+        evaluator = RagasEvaluator(evaluate_fn=_partial)
+        with pytest.raises(PartialEvaluatorError, match="answer_relevancy") as exc_info:
+            evaluator.evaluate("q", ["a"], ["a"], answer="x")
+        assert exc_info.value.metrics == {"faithfulness": 0.88}
+
+    def test_single_metric_without_errors_is_accepted(self) -> None:
+        """未失败、只算出一项时不应整行作废。"""
+
+        def _only_faithfulness(
+            payload: Mapping[str, Any],
+            llm: Any | None = None,
+            embeddings: Any | None = None,
+        ) -> dict[str, float]:
+            return {"faithfulness": 1.0}
+
+        evaluator = RagasEvaluator(evaluate_fn=_only_faithfulness)
+        assert evaluator.evaluate("q", ["a"], ["a"], answer="x") == {"faithfulness": 1.0}
 
     def test_fresh_loop_isolates_from_running_parent(self) -> None:
         """父协程已有事件循环时，打分应在新线程里跑。"""

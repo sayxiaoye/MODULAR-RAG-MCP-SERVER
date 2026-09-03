@@ -58,6 +58,28 @@ class TestLlamaCppLLMChat:
         payload = mock_post.call_args.kwargs["json"]
         assert payload["model"] == "qwen2.5-7b-instruct"
 
+    @patch("httpx.post")
+    def test_extra_chat_payload_sends_grammar(self, mock_post: MagicMock) -> None:
+        """Judge 注入的 extra_chat_payload 应出现在 llama-server 请求体。"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.text = ""
+        mock_resp.json.return_value = _openai_style_response("{}")
+        mock_post.return_value = mock_resp
+
+        llm = LlamaCppLLM(
+            LLMSettings(
+                provider="llamacpp",
+                model="qwen2.5-7b-instruct",
+                temperature=0.0,
+                max_tokens=128,
+            )
+        )
+        llm.extra_chat_payload = {"grammar": "root ::= object"}
+        llm.chat([ChatMessage(role="user", content="输出 JSON")])
+        payload = mock_post.call_args.kwargs["json"]
+        assert payload["grammar"] == "root ::= object"
+
     @patch("httpx.post", side_effect=httpx.ConnectError("connection refused"))
     def test_connect_error_hints_llama_server(self, mock_post: MagicMock) -> None:
         """连接失败时应提示启动 llama-server，且不泄露 api_key。"""

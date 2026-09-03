@@ -14,6 +14,7 @@ from typing import Any, Callable, Mapping, Sequence
 from core.settings import Settings, load_settings, resolve_path
 from libs.llm.base_llm import BaseLLM, ChatMessage, ChatResponse, LLMError
 from libs.vector_store.base_vector_store import BaseVectorStore
+from observability.evaluation.cjk_text import split_sentences
 from observability.evaluation.eval_runner import load_golden_test_set
 
 logger = logging.getLogger(__name__)
@@ -62,14 +63,31 @@ def fallback_query_from_text(text: str) -> str:
     stripped = " ".join((text or "").split())
     if not stripped:
         return "这段内容在讲什么？"
-    first = re.split(r"[。！？?\n]|：|:", stripped, maxsplit=1)[0].strip()
-    if not first:
-        first = stripped[:40].strip()
+    sentences = split_sentences(stripped)
+    first = (sentences[0] if sentences else stripped).strip()
+    # 「标题：正文」仍用冒号前作问句，但不切开括号里的冒号
+    title = _prefix_before_colon_outside_parens(first)
+    if title:
+        first = title
     if first.endswith(("？", "?")):
         return first
-    if first.endswith("："):
-        first = first[:-1].strip()
+    first = first.rstrip("。！!?：:").strip()
+    if not first:
+        first = stripped[:40].strip().rstrip("。！!?：:")
     return f"{first}？"
+
+
+def _prefix_before_colon_outside_parens(text: str) -> str:
+    """括号外第一个中英文冒号之前的片段；没有则空串。"""
+    depth = 0
+    for index, char in enumerate(text):
+        if char in "（(":
+            depth += 1
+        elif char in "）)":
+            depth = max(0, depth - 1)
+        elif depth == 0 and char in "：:":
+            return text[:index].strip()
+    return ""
 
 
 def parse_llm_query(raw: str, *, fallback_text: str) -> str:

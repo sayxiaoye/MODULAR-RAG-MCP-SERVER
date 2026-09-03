@@ -130,6 +130,27 @@ class TestCompositeEvaluatorMerge:
         with pytest.raises(EvaluatorError, match="组合评估失败"):
             composite.evaluate("q", ["a"], ["a"])
 
+    def test_partial_error_merges_successful_metrics(self) -> None:
+        """Ragas 部分失败时仍应合并 Custom 指标并上抛 PartialEvaluatorError。"""
+        from libs.evaluator.base_evaluator import PartialEvaluatorError
+
+        composite = CompositeEvaluator(
+            [
+                _FakeEvaluator(
+                    {},
+                    boom=PartialEvaluatorError(
+                        "Ragas 部分指标失败: context_precision",
+                        {"faithfulness": 0.9},
+                    ),
+                ),
+                _FakeEvaluator({"hit_rate": 1.0}),
+            ]
+        )
+        with pytest.raises(PartialEvaluatorError) as exc_info:
+            composite.evaluate("q", ["a"], ["a"])
+        assert exc_info.value.metrics["faithfulness"] == 0.9
+        assert exc_info.value.metrics["hit_rate"] == 1.0
+
 
 @pytest.mark.unit
 class TestEvaluatorFactoryBackends:

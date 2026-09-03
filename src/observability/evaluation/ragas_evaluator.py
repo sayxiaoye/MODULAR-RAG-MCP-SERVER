@@ -8,12 +8,14 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Mapping, TypeVar
 
 from core.settings import EvaluationSettings
-from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError
+from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError, PartialEvaluatorError
 
 _T = TypeVar("_T")
 
 # Ragas 默认产出的指标名（与 spec 一致）
 RAGAS_METRIC_NAMES = ("faithfulness", "answer_relevancy", "context_precision")
+# context_precision 对每条 chunk 打一轮 JSON；日语集合检索长，限制条数降低解析失败面
+_CONTEXT_PRECISION_MAX_CHUNKS = 5
 
 _METRIC_ALIASES: dict[str, tuple[str, ...]] = {
     "faithfulness": ("faithfulness",),
@@ -70,11 +72,12 @@ class RagasEvaluator(BaseEvaluator):
                 ``ground_truth`` / ``reference``。
 
         Returns:
-            至少含 faithfulness、answer_relevancy 的指标字典。
+            已成功解析的指标字典；部分失败时抛 ``PartialEvaluatorError``（带已有分数）。
 
         Raises:
             ImportError: 未安装 ragas 且未注入 evaluate_fn。
-            EvaluatorError: 输入非法或 Ragas 执行失败。
+            PartialEvaluatorError: 至少一项成功、其余解析失败。
+            EvaluatorError: 输入非法或全部指标失败。
         """
         self._validate_inputs(query, retrieved_ids, golden_ids)
         payload = _build_payload(query, retrieved_ids, golden_ids, kwargs)
@@ -83,21 +86,27 @@ class RagasEvaluator(BaseEvaluator):
             raw = runner(payload, llm=self._llm, embeddings=self._embeddings)
         except ImportError:
             raise
+        except PartialEvaluatorError:
+            raise
         except Exception as exc:
             raise EvaluatorError(f"Ragas 评估失败: {exc}") from exc
 
-        metrics = _normalize_metrics(raw)
-        if "faithfulness" not in metrics or "answer_relevancy" not in metrics:
-            raise EvaluatorError(
-                "Ragas 结果缺少有效的 faithfulness 或 answer_relevancy"
-            )
-
+        metrics, errors = _split_metric_errors(raw)
+        metrics = _normalize_metrics(metrics)
         if self.settings and self.settings.metrics:
             allowed = set(self.settings.metrics)
             ragas_requested = allowed.intersection(RAGAS_METRIC_NAMES)
             # 仅当配置点名了 Ragas 指标时才裁剪，避免 provider=ragas 却只配了 hit_rate 时得到空字典
             if ragas_requested:
                 metrics = {key: value for key, value in metrics.items() if key in ragas_requested}
+        if not metrics:
+            detail = "; ".join(errors) if errors else "无有效分数"
+            raise EvaluatorError(f"Ragas 结果缺少有效指标: {detail}")
+        if errors:
+            raise PartialEvaluatorError(
+                "Ragas 部分指标失败: " + "; ".join(errors),
+                metrics,
+            )
 
         if trace is not None and hasattr(trace, "record_stage"):
             trace.record_stage(
@@ -116,6 +125,8 @@ def _build_payload(
     kwargs: Mapping[str, Any],
 ) -> dict[str, Any]:
     """把 BaseEvaluator 入参整理成 Ragas 样本字段。"""
+    from observability.evaluation.cjk_text import normalize_judge_text
+
     answer = kwargs.get("answer", kwargs.get("generated_answer"))
     if answer is None:
         answer = ""
@@ -129,10 +140,10 @@ def _build_payload(
     if ground_truth is None:
         ground_truth = ", ".join(golden_ids)
     return {
-        "question": query.strip(),
-        "answer": str(answer),
-        "contexts": [str(item) for item in contexts],
-        "ground_truth": str(ground_truth),
+        "question": normalize_judge_text(query.strip()),
+        "answer": normalize_judge_text(str(answer)),
+        "contexts": [normalize_judge_text(str(item)) for item in contexts],
+        "ground_truth": normalize_judge_text(str(ground_truth)),
     }
 
 
@@ -144,6 +155,16 @@ def _load_ragas() -> tuple[Any, list[Any]]:
         raise ImportError(
             "未安装 Ragas。请执行: python -m pip install '.[evaluation]'"
         ) from exc
+    from observability.evaluation.ragas_cjk_prompts import (
+        apply_cjk_judge_prompts,
+        patch_cjk_statement_split,
+    )
+
+    faithfulness = Faithfulness()
+    apply_cjk_judge_prompts(faithfulness)
+    patch_cjk_statement_split(faithfulness)
+    relevancy = AnswerRelevancy(strictness=1)
+    apply_cjk_judge_prompts(relevancy)
     # 黄金集通常没有自然语言 reference，用 without_reference 避免拿 chunk_id 当标准答案
     try:
         from ragas.metrics import LLMContextPrecisionWithoutReference
@@ -153,8 +174,9 @@ def _load_ragas() -> tuple[Any, list[Any]]:
         from ragas.metrics import ContextPrecision as context_metric_cls
 
         context_metric = context_metric_cls()
+    apply_cjk_judge_prompts(context_metric)
     # strictness=1：不要 gather 多次 Judge，避免 exclusive_gpu 并发抢模型
-    return None, [Faithfulness(), AnswerRelevancy(strictness=1), context_metric]
+    return None, [faithfulness, relevancy, context_metric]
 
 
 def _run_sync_in_fresh_loop(func: Callable[[], _T]) -> _T:
@@ -219,9 +241,10 @@ def _score_metrics_without_evaluate(
     errors: list[str] = []
     try:
         for metric in metrics:
+            sample_for_metric = _sample_for_metric(metric, sample, payload)
             try:
                 score = loop.run_until_complete(
-                    metric._single_turn_ascore(sample=sample, callbacks=[])
+                    metric._single_turn_ascore(sample=sample_for_metric, callbacks=[])
                 )
                 number = _finite_float(score)
                 if number is None:
@@ -244,10 +267,42 @@ def _score_metrics_without_evaluate(
         loop.close()
         asyncio.set_event_loop(None)
 
-    if "faithfulness" not in raw or "answer_relevancy" not in raw:
-        detail = "; ".join(errors) if errors else "无有效分数"
-        raise EvaluatorError(f"Ragas 指标计算失败: {detail}")
+    if errors:
+        raw["_metric_errors"] = errors
     return raw
+
+
+def _split_metric_errors(raw: Any) -> tuple[dict[str, Any], list[str]]:
+    """从打分结果里抽出 ``_metric_errors``，避免当成指标列。"""
+    if not isinstance(raw, Mapping):
+        try:
+            return dict(raw), []
+        except Exception:
+            return {}, []
+    data = dict(raw)
+    errors_raw = data.pop("_metric_errors", None)
+    errors: list[str] = []
+    if isinstance(errors_raw, list):
+        errors = [str(item) for item in errors_raw if str(item).strip()]
+    elif isinstance(errors_raw, str) and errors_raw.strip():
+        errors = [errors_raw]
+    return data, errors
+
+
+def _sample_for_metric(metric: Any, sample: Any, payload: Mapping[str, Any]) -> Any:
+    """context_precision 只对前若干条 chunk 打分，降低日语长检索的 JSON 失败面。"""
+    name = str(getattr(metric, "name", "") or "")
+    if "context_precision" not in name:
+        return sample
+    from ragas.dataset_schema import SingleTurnSample
+
+    contexts = list(payload["contexts"])[:_CONTEXT_PRECISION_MAX_CHUNKS]
+    return SingleTurnSample(
+        user_input=sample.user_input,
+        response=sample.response,
+        retrieved_contexts=contexts,
+        reference=getattr(sample, "reference", None),
+    )
 
 
 def _result_to_mapping(result: Any) -> dict[str, Any]:

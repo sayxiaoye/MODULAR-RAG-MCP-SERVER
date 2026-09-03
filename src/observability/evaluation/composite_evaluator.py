@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Sequence
 
-from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError
+from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError, PartialEvaluatorError
 
 
 class CompositeEvaluator(BaseEvaluator):
@@ -51,6 +51,7 @@ class CompositeEvaluator(BaseEvaluator):
 
         先等所有任务结束再决定成败，避免一路失败就取消另一路。
         同名指标以后写入者为准（与列表顺序一致，与完成先后无关）。
+        子评估器抛 ``PartialEvaluatorError`` 时合并已有分数，再带上 Custom 等其它指标重新抛出。
 
         Args:
             query: 用户查询。
@@ -85,11 +86,15 @@ class CompositeEvaluator(BaseEvaluator):
             # 按提交顺序取结果，保证合并顺序稳定
             parts: list[dict[str, float]] = []
             first_error: BaseException | None = None
+            partial_errors: list[str] = []
             for future in futures:
                 try:
                     parts.append(future.result())
                 except ImportError:
                     raise
+                except PartialEvaluatorError as exc:
+                    parts.append(dict(exc.metrics))
+                    partial_errors.append(str(exc))
                 except Exception as exc:
                     if first_error is None:
                         first_error = exc
@@ -100,6 +105,12 @@ class CompositeEvaluator(BaseEvaluator):
         merged: dict[str, float] = {}
         for part in parts:
             merged.update(part)
+
+        if partial_errors:
+            raise PartialEvaluatorError(
+                "组合评估部分失败: " + "; ".join(partial_errors),
+                merged,
+            )
 
         if trace is not None and hasattr(trace, "record_stage"):
             trace.record_stage(

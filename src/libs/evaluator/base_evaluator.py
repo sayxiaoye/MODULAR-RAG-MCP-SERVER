@@ -10,6 +10,14 @@ class EvaluatorError(Exception):
     """评估输入校验或指标计算失败时抛出。"""
 
 
+class PartialEvaluatorError(EvaluatorError):
+    """部分指标已算出，其余项解析失败；``metrics`` 为已成功的分数。"""
+
+    def __init__(self, message: str, metrics: dict[str, float]) -> None:
+        super().__init__(message)
+        self.metrics = dict(metrics)
+
+
 class BaseEvaluator(ABC):
     """Evaluator 抽象基类：根据检索结果与标准答案计算指标。"""
 

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
 
 from core.settings import Settings
-from libs.evaluator.base_evaluator import BaseEvaluator
+from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError, PartialEvaluatorError
 from libs.llm.base_llm import BaseLLM
 
 
@@ -232,6 +232,17 @@ class EvalRunner:
                 contexts=texts,
                 answer=answer,
             )
+        except PartialEvaluatorError as exc:
+            return EvalCaseResult(
+                query=query,
+                retrieved_ids=retrieved_ids,
+                golden_ids=golden_ids,
+                expected_sources=expected_sources,
+                retrieved_sources=retrieved_sources,
+                metrics={key: float(value) for key, value in exc.metrics.items()},
+                error=f"评估部分失败: {exc}",
+                generated_answer=answer,
+            )
         except Exception as exc:
             return EvalCaseResult(
                 query=query,
@@ -290,12 +301,12 @@ def _unpack_hits(hits: Sequence[Any]) -> tuple[list[str], list[str], list[str]]:
 
 
 def _build_report(results: list[EvalCaseResult]) -> EvalReport:
-    """按用例平均 hit_rate / mrr 及其余数值指标；失败用例记 0。"""
+    """按用例平均 hit_rate / mrr 及其余数值指标；部分失败仍计入已算出的分数。"""
     hit_rates: list[float] = []
     mrrs: list[float] = []
     extras: dict[str, list[float]] = {}
     for item in results:
-        metrics = item.metrics if not item.error else {}
+        metrics = item.metrics
         hit_rates.append(float(metrics.get("hit_rate", 0.0)))
         mrrs.append(float(metrics.get("mrr", 0.0)))
         for key, value in metrics.items():

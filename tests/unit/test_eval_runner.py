@@ -294,6 +294,46 @@ class TestEvalRunnerGeneratedAnswer:
         assert "生成答案失败" in report.cases[0].error
         assert report.cases[0].metrics == {}
 
+    def test_partial_evaluator_error_keeps_metrics(self, tmp_path: Path) -> None:
+        """单指标解析失败应保留已有分数，并写入 error。"""
+        from libs.evaluator.base_evaluator import PartialEvaluatorError
+
+        path = tmp_path / "set.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "q",
+                            "expected_chunk_ids": ["gold-1"],
+                            "expected_sources": [],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class _PartialRagas:
+            requires_generated_answer = True
+
+            def evaluate(self, *args: Any, **kwargs: Any) -> dict[str, float]:
+                raise PartialEvaluatorError(
+                    "Ragas 部分指标失败: faithfulness: parse",
+                    {"faithfulness": 0.81, "answer_relevancy": 0.7},
+                )
+
+        report = EvalRunner(
+            load_settings(),
+            FakeHybridSearch({"q": [_hit("gold-1")]}),
+            _PartialRagas(),
+            answer_fn=lambda query, contexts: "忧郁写作憂鬱（ゆううつ）。",
+        ).run(path)
+        assert report.cases[0].error is not None
+        assert "评估部分失败" in report.cases[0].error
+        assert report.cases[0].metrics["faithfulness"] == 0.81
+        assert report.metrics["faithfulness"] == 0.81
+
 
 @pytest.mark.unit
 class TestEvaluateCli:

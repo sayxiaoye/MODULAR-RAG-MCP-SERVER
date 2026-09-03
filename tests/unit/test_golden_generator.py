@@ -80,6 +80,13 @@ class TestGoldenHelpers:
         assert fallback_query_from_text("如何配置 Azure OpenAI：在门户创建资源。") == "如何配置 Azure OpenAI？"
         assert fallback_query_from_text("什么是 RRF？其余忽略") == "什么是 RRF？"
 
+    def test_fallback_query_does_not_split_inside_furigana_parens(self) -> None:
+        """括号内句号不应变成问句边界；读音与汉字留在同一问句里。"""
+        query = fallback_query_from_text("憂鬱（ゆううつ。表心情）是 N2 词汇。下一句忽略。")
+        assert "ゆううつ" in query
+        assert "下一句" not in query
+        assert query.endswith("？")
+
     def test_parse_llm_query_strips_quotes_and_numbering(self) -> None:
         """模型偶发带编号或引号时应抽出纯问题。"""
         assert parse_llm_query('1. "Hybrid Search 如何融合？"', fallback_text="x") == "Hybrid Search 如何融合？"

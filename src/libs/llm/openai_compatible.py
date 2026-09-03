@@ -42,13 +42,19 @@ class OpenAICompatibleLLM(BaseLLM):
         return f"{self.base_url}/chat/completions"
 
     def _build_payload(self, messages: list[ChatMessage]) -> dict[str, Any]:
-        """组装与 OpenAI Chat API 一致的请求体。"""
-        return {
+        """组装与 OpenAI Chat API 一致的请求体；可合并 extra_chat_payload（如 JSON grammar）。"""
+        payload: dict[str, Any] = {
             "model": self.settings.model,
             "messages": [{"role": m.role, "content": m.content} for m in messages],
             "temperature": self.settings.temperature,
             "max_tokens": self.settings.max_tokens,
         }
+        extra = getattr(self, "extra_chat_payload", None)
+        if isinstance(extra, dict):
+            for key, value in extra.items():
+                if value is not None:
+                    payload[key] = value
+        return payload
 
     def _build_headers(self) -> dict[str, str]:
         return {

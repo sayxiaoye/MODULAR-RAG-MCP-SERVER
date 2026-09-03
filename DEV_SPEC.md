@@ -586,6 +586,7 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 	- 各评估框架实现该接口，输出标准化的指标字典。
 	- **Ragas Judge** 使用 `settings.llm` / `settings.embedding`（经工厂包装，走 llamacpp 按需启停或已配置的 OpenAI key），不回退 ragas 默认 OpenAI。
 	- **生成答案**：QueryPipeline 只拼检索结果；选 Ragas / All 时 `EvalRunner` 在 `evaluate()` 前用项目 LLM 根据 query + 检索上下文生成答案，再交给 Faithfulness / Answer Relevancy。
+	- **中日文 Judge**：Ragas 英文 few-shot 换成中文指令 + 含「憂鬱（ゆううつ）」的示例；CJK 答案按句号规则拆句（括号内读音不切开）；llamacpp 用 GBNF 锁 JSON。单指标解析失败保留已有分数（`PartialEvaluatorError`），`context_precision` 最多评前 5 条 chunk。
 
 - **可选评估框架**：
 
@@ -1574,6 +1575,9 @@ smart-knowledge-hub/
 │           ├── golden_generator.py      # 按集合生成黄金测试集（LLM 出题 + 真实 chunk_id）
 │           ├── answer_generator.py      # 评估前根据检索上下文生成 RAG 答案
 │           ├── ragas_adapters.py        # 项目 LLM/Embedding → Ragas Judge 包装
+│           ├── ragas_cjk_prompts.py     # 中日 Judge few-shot + CJK 拆句
+│           ├── cjk_text.py              # 句号+括号拆句（Judge / 黄金集兜底共用） / 引号规范化
+│           ├── json_grammar.py          # llama.cpp JSON GBNF
 │           ├── ragas_evaluator.py       # Ragas 评估实现
 │           └── composite_evaluator.py   # 组合评估器 (多后端并行)
 
@@ -1620,6 +1624,8 @@ smart-knowledge-hub/
 │   │   ├── test_jsonl_logger.py         # F2: JSON Lines 日志测试
 │   │   ├── test_golden_generator.py     # 黄金集生成（取样/LLM 出题/落盘）
 │   │   ├── test_answer_generator.py     # 评估答案生成 + Ragas Judge 适配
+│   │   ├── test_cjk_text.py             # 日语拆句 / Judge 文本规范化
+│   │   ├── test_ragas_cjk_prompts.py    # 中日 Judge prompt
 │   │   └── ...                          # 其他已有单元测试
 │   ├── integration/                     # 集成测试
 │   │   ├── test_ingestion_pipeline.py
@@ -1734,8 +1740,10 @@ smart-knowledge-hub/
 | `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，先生成答案（Ragas），再计算指标 |
 | `evaluation/golden_generator.py` | 黄金集生成 | 按集合取样 chunk，LLM 出题，真实 id 落盘 JSON |
 | `evaluation/answer_generator.py` | RAG 答案生成 | 评估链路用 query + contexts 调用项目 LLM |
-| `evaluation/ragas_adapters.py` | Ragas Judge 适配 | BaseLLM.chat / BaseEmbedding.embed 接到 ragas |
-| `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision |
+| `evaluation/ragas_adapters.py` | Ragas Judge 适配 | BaseLLM.chat / BaseEmbedding.embed 接到 ragas；llamacpp 附 JSON grammar |
+| `evaluation/cjk_text.py` | CJK 句界 | `split_sentences` 供 Faithfulness 与 `fallback_query_from_text` 共用 |
+| `evaluation/ragas_cjk_prompts.py` | 中日 Judge prompt | 中文指令 + 日语 few-shot；CJK 确定性拆句 |
+| `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision；部分失败保留已有分数 |
 | `evaluation/composite_evaluator.py` | 组合评估器 | 多后端并行执行，结果汇总 |
 
 
@@ -3157,16 +3165,20 @@ dashboard:
 - **修改文件**：
   - `src/observability/evaluation/ragas_evaluator.py`（新增）
   - `src/observability/evaluation/ragas_adapters.py`（项目 LLM/Embedding → Ragas Judge）
+  - `src/observability/evaluation/ragas_cjk_prompts.py`（中日 Judge few-shot + CJK 拆句）
+  - `src/observability/evaluation/cjk_text.py` / `json_grammar.py`
   - `src/libs/evaluator/evaluator_factory.py`（注册 ragas provider，注入 Judge）
   - `tests/unit/test_ragas_evaluator.py`（新增）
 - **实现类/函数**：
   - `RagasEvaluator(BaseEvaluator)`：实现 `evaluate()` 方法；`requires_generated_answer=True`
   - 支持指标：Faithfulness, Answer Relevancy, Context Precision
   - Judge 使用 `settings.llm` / `settings.embedding`（工厂注入并包装），不回退 ragas 默认 OpenAI
+  - 中日黄金集：`split_sentences`（句号+括号保护）供 Faithfulness 与 `fallback_query_from_text` 共用；中文 JSON 指令 + 日语 few-shot；llamacpp GBNF 锁 JSON
+  - 单指标解析失败抛 `PartialEvaluatorError`（带已有 metrics），不整行作废；`context_precision` 最多 5 条 chunk
   - 不调用 `ragas.evaluate()`（Python 3.14 + nest_asyncio 下 `wait_for` 会立刻 Timeout/nan）；改为独立线程里 `_single_turn_ascore`
   - 优雅降级：Ragas 未安装时抛出明确的 `ImportError` 提示
-- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典；真实路径 Judge 走项目 LLM。
-- **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py`。
+- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典；真实路径 Judge 走项目 LLM；部分指标失败时其余分数仍可展示。
+- **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py tests/unit/test_cjk_text.py tests/unit/test_ragas_cjk_prompts.py`。
 
 ### H2：CompositeEvaluator 实现 ✅
 - **目标**：实现 `composite_evaluator.py`：组合多个 Evaluator 并行执行，汇总结果。
