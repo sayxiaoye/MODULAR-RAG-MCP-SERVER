@@ -416,6 +416,9 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 - **设计思路**：
 	- 定义统一的 `Evaluator` 接口，暴露 `evaluate(query, retrieved_chunks, generated_answer, ground_truth) -> metrics` 方法。
 	- 各评估框架实现该接口，输出标准化的指标字典。
+	- **Ragas Judge** 使用 `settings.llm` / `settings.embedding`（经工厂包装，走 llamacpp 按需启停或已配置的 OpenAI key），不回退 ragas 默认 OpenAI。
+	- **生成答案**：QueryPipeline 只拼检索结果；选 Ragas / All 时 `EvalRunner` 在 `evaluate()` 前用项目 LLM 根据 query + 检索上下文生成答案，再交给 Faithfulness / Answer Relevancy。
+	- **中日文 Judge**：Ragas 英文 few-shot 换成中文指令 + 含「憂鬱（ゆううつ）」的示例；CJK 答案按句号规则拆句（括号内读音不切开）；llamacpp 用 GBNF 锁 JSON。单指标解析失败保留已有分数（`PartialEvaluatorError`），`context_precision` 最多评前 5 条 chunk。
 
 - **可选评估框架**：
 
@@ -647,7 +650,8 @@ Dashboard 基于 Streamlit 构建多页面应用（`st.navigation`），提供�
     - **最终结果表**：展示 Top-K 候选文档的标题、分数、来源。
 
 **页面 6：评估面板 (Evaluation Panel)**
-- **评估运行**：选择评估后端（Ragas / Custom / All）与 golden test set，点击运行。
+- **评估运行**：选择**集合**（与摄取/CLI `--collection` 同一逻辑名）、评估后端（Ragas / Custom / All）与 golden test set，点击运行。
+- **生成黄金集**：按集合从已摄入 chunk 生成 N 条用例并落盘，下拉框自动出现新 JSON。
 - **指标展示**：以表格和图表展示 hit_rate、mrr、faithfulness 等指标。
 - **历史趋势**：对比不同时间的评估结果，观察策略调整的效果。
 - **注意**：评估面板在 Phase H 实现，Phase G 完成后该页面显示"评估模块尚未启用"的占位提示。

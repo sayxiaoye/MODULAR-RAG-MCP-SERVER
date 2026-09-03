@@ -147,7 +147,7 @@
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| I1 | E2E：MCP Client 侧调用模拟 | [ ] | | |
+| I1 | E2E：MCP Client 侧调用模拟 | [x] | 2026-09-03 | 子进程 Stdio tools/list + query_knowledge_hub citations，2个E2E测试 |
 | I2 | E2E：Dashboard 冒烟测试 | [ ] | | |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [ ] | | |
 | I4 | 清理接口一致性（契约测试补齐） | [ ] | | |
@@ -167,8 +167,8 @@
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 5 | 100% |
-| 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **66** | **93%** |
+| 阶段 I | 5 | 1 | 20% |
+| **总计** | **71** | **67** | **94%** |
 
 
 ---
@@ -1201,14 +1201,21 @@
 - **目标**：实现 `ragas_evaluator.py`：封装 Ragas 框架，实现 `BaseEvaluator` 接口。
 - **修改文件**：
   - `src/observability/evaluation/ragas_evaluator.py`（新增）
-  - `src/libs/evaluator/evaluator_factory.py`（注册 ragas provider）
+  - `src/observability/evaluation/ragas_adapters.py`（项目 LLM/Embedding → Ragas Judge）
+  - `src/observability/evaluation/ragas_cjk_prompts.py`（中日 Judge few-shot + CJK 拆句）
+  - `src/observability/evaluation/cjk_text.py` / `json_grammar.py`
+  - `src/libs/evaluator/evaluator_factory.py`（注册 ragas provider，注入 Judge）
   - `tests/unit/test_ragas_evaluator.py`（新增）
 - **实现类/函数**：
-  - `RagasEvaluator(BaseEvaluator)`：实现 `evaluate()` 方法
+  - `RagasEvaluator(BaseEvaluator)`：实现 `evaluate()` 方法；`requires_generated_answer=True`
   - 支持指标：Faithfulness, Answer Relevancy, Context Precision
+  - Judge 使用 `settings.llm` / `settings.embedding`（工厂注入并包装），不回退 ragas 默认 OpenAI
+  - 中日黄金集：`split_sentences`（句号+括号保护）供 Faithfulness 与 `fallback_query_from_text` 共用；中文 JSON 指令 + 日语 few-shot；llamacpp GBNF 锁 JSON
+  - 单指标解析失败抛 `PartialEvaluatorError`（带已有 metrics），不整行作废；`context_precision` 最多 5 条 chunk
+  - 不调用 `ragas.evaluate()`（Python 3.14 + nest_asyncio 下 `wait_for` 会立刻 Timeout/nan）；改为独立线程里 `_single_turn_ascore`
   - 优雅降级：Ragas 未安装时抛出明确的 `ImportError` 提示
-- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典。
-- **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py`。
+- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典；真实路径 Judge 走项目 LLM；部分指标失败时其余分数仍可展示。
+- **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py tests/unit/test_cjk_text.py tests/unit/test_ragas_cjk_prompts.py`。
 
 ### H2：CompositeEvaluator 实现 ✅
 - **目标**：实现 `composite_evaluator.py`：组合多个 Evaluator 并行执行，汇总结果。
@@ -1227,12 +1234,14 @@
 - **前置依赖**：D5（HybridSearch）、H1-H2（评估器）
 - **修改文件**：
   - `src/observability/evaluation/eval_runner.py`（新增）
+  - `src/observability/evaluation/answer_generator.py`（评估前生成 RAG 答案）
   - `tests/fixtures/golden_test_set.json`（新增：黄金测试集）
   - `scripts/evaluate.py`（新增：评估运行脚本）
 - **实现类/函数**：
   - `EvalRunner.__init__(settings, hybrid_search, evaluator)`
   - `EvalRunner.run(test_set_path) -> EvalReport`：运行评估并返回报告
-  - `EvalReport`：包含 hit_rate, mrr, 各 query 结果详情
+  - Ragas / All：检索后先用项目 LLM 根据 query + contexts 生成答案，再 `evaluate(..., answer=..., contexts=...)`
+  - `EvalReport`：包含 hit_rate, mrr, 各 query 结果详情（含 `generated_answer`）
 - **golden_test_set.json 格式**：
   ```json
   {
@@ -1254,9 +1263,10 @@
 - **修改文件**：
   - `src/observability/dashboard/pages/evaluation_panel.py`（实现：替换占位提示）
 - **实现要点**：
-  - 选择评估后端与 golden test set
-  - 点击运行，展示评估结果（hit_rate、mrr、各 query 明细）
-  - 可选：历史评估结果对比图
+  - 选择**集合**（与 CLI `--collection` 对齐）、评估后端与 golden test set
+  - **生成黄金集**：从所选集合取样 chunk，LLM 出题（失败则规则问句），`expected_chunk_ids` 使用真实向量 id，JSON 写入 `data/eval/`，下拉框可立即选择
+  - 点击运行，展示评估结果（hit_rate、mrr、Ragas 指标、生成答案、各 query 明细）
+  - 历史记录表同时展示 Custom（hit_rate/mrr）与 Ragas（faithfulness/answer_relevancy/context_precision）；可选择一条查看当时明细
 - **验收标准**：可在 Dashboard 中运行评估并查看指标。
 - **测试方法**：手动验证。
 
@@ -1273,7 +1283,7 @@
 
 ## 阶段 I：端到端验收与文档收口（目标：开箱即用的"可复现"工程）
 
-### I1：E2E：MCP Client 侧调用模拟
+### I1：E2E：MCP Client 侧调用模拟 ✅
 - **目标**：实现 `tests/e2e/test_mcp_client.py`：以子进程启动 server，模拟 tools/list + tools/call。
 - **修改文件**：
   - `tests/e2e/test_mcp_client.py`

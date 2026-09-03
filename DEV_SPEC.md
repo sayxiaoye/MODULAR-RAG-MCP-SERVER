@@ -2110,7 +2110,7 @@ dashboard:
 
 | 任务编号 | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| I1 | E2E：MCP Client 侧调用模拟 | [ ] | | |
+| I1 | E2E：MCP Client 侧调用模拟 | [x] | 2026-09-03 | 子进程 Stdio tools/list + query_knowledge_hub citations，2个E2E测试 |
 | I2 | E2E：Dashboard 冒烟测试 | [ ] | | |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [ ] | | |
 | I4 | 清理接口一致性（契约测试补齐） | [ ] | | |
@@ -2130,8 +2130,8 @@ dashboard:
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 5 | 100% |
-| 阶段 I | 5 | 0 | 0% |
-| **总计** | **71** | **66** | **93%** |
+| 阶段 I | 5 | 1 | 20% |
+| **总计** | **71** | **67** | **94%** |
 
 
 ---
@@ -3246,7 +3246,7 @@ dashboard:
 
 ## 阶段 I：端到端验收与文档收口（目标：开箱即用的"可复现"工程）
 
-### I1：E2E：MCP Client 侧调用模拟
+### I1：E2E：MCP Client 侧调用模拟 ✅
 - **目标**：实现 `tests/e2e/test_mcp_client.py`：以子进程启动 server，模拟 tools/list + tools/call。
 - **修改文件**：
   - `tests/e2e/test_mcp_client.py`

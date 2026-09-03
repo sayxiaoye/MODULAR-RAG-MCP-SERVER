@@ -305,6 +305,11 @@ smart-knowledge-hub/
 │           ├── __init__.py
 │           ├── eval_runner.py           # 评估执行器
 │           ├── golden_generator.py      # 按集合生成黄金测试集（LLM 出题 + 真实 chunk_id）
+│           ├── answer_generator.py      # 评估前根据检索上下文生成 RAG 答案
+│           ├── ragas_adapters.py        # 项目 LLM/Embedding → Ragas Judge 包装
+│           ├── ragas_cjk_prompts.py     # 中日 Judge few-shot + CJK 拆句
+│           ├── cjk_text.py              # 句号+括号拆句（Judge / 黄金集兜底共用） / 引号规范化
+│           ├── json_grammar.py          # llama.cpp JSON GBNF
 │           ├── ragas_evaluator.py       # Ragas 评估实现
 │           └── composite_evaluator.py   # 组合评估器 (多后端并行)
 
@@ -350,6 +355,9 @@ smart-knowledge-hub/
 │   │   ├── test_trace_context.py        # F1: 追踪上下文测试
 │   │   ├── test_jsonl_logger.py         # F2: JSON Lines 日志测试
 │   │   ├── test_golden_generator.py     # 黄金集生成（取样/LLM 出题/落盘）
+│   │   ├── test_answer_generator.py     # 评估答案生成 + Ragas Judge 适配
+│   │   ├── test_cjk_text.py             # 日语拆句 / Judge 文本规范化
+│   │   ├── test_ragas_cjk_prompts.py    # 中日 Judge prompt
 │   │   └── ...                          # 其他已有单元测试
 │   ├── integration/                     # 集成测试
 │   │   ├── test_ingestion_pipeline.py
@@ -461,9 +469,13 @@ smart-knowledge-hub/
 | `dashboard/services/trace_service.py` | Trace 数据服务 | 解析 traces.jsonl，按 trace_type 分类 |
 | `dashboard/services/data_service.py` | 数据浏览服务 | 封装 ChromaStore/ImageStorage 读取 |
 | `dashboard/services/config_service.py` | 配置读取服务 | 封装 Settings 展示 |
-| `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，指标计算，报告生成 |
+| `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，先生成答案（Ragas），再计算指标 |
 | `evaluation/golden_generator.py` | 黄金集生成 | 按集合取样 chunk，LLM 出题，真实 id 落盘 JSON |
-| `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision |
+| `evaluation/answer_generator.py` | RAG 答案生成 | 评估链路用 query + contexts 调用项目 LLM |
+| `evaluation/ragas_adapters.py` | Ragas Judge 适配 | BaseLLM.chat / BaseEmbedding.embed 接到 ragas；llamacpp 附 JSON grammar |
+| `evaluation/cjk_text.py` | CJK 句界 | `split_sentences` 供 Faithfulness 与 `fallback_query_from_text` 共用 |
+| `evaluation/ragas_cjk_prompts.py` | 中日 Judge prompt | 中文指令 + 日语 few-shot；CJK 确定性拆句 |
+| `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision；部分失败保留已有分数 |
 | `evaluation/composite_evaluator.py` | 组合评估器 | 多后端并行执行，结果汇总 |
 
 
