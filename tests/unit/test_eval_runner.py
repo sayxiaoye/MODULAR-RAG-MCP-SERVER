@@ -142,6 +142,7 @@ class TestEvalRunner:
         assert report.cases[1].metrics["hit_rate"] == 0.0
         assert report.cases[0].retrieved_ids == ["gold-1"]
         assert "命中" in [item.query for item in report.cases]
+        assert report.cases[0].generated_answer is None
 
     def test_search_error_isolated(self, tmp_path: Path) -> None:
         """单条检索失败不中断，该条 error 有记录，宏观 hit_rate 按 0 计入。"""
@@ -174,6 +175,124 @@ class TestEvalRunner:
         assert report.cases[1].error is not None
         assert "检索失败" in report.cases[1].error
         assert report.hit_rate == 0.5
+
+
+@pytest.mark.unit
+class TestEvalRunnerGeneratedAnswer:
+    """Ragas 路径应先生成答案再交给评估器。"""
+
+    def test_passes_generated_answer_to_evaluator(self, tmp_path: Path) -> None:
+        """requires_generated_answer=True 时，evaluate 应收到 answer 与 contexts。"""
+        path = tmp_path / "set.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "如何配置？",
+                            "expected_chunk_ids": ["gold-1"],
+                            "expected_sources": ["a.pdf"],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        captured: dict[str, Any] = {}
+
+        class _NeedAnswerEvaluator:
+            requires_generated_answer = True
+
+            def evaluate(
+                self,
+                query: str,
+                retrieved_ids: list[str],
+                golden_ids: list[str],
+                trace: Any | None = None,
+                **kwargs: Any,
+            ) -> dict[str, float]:
+                captured["answer"] = kwargs.get("answer")
+                captured["contexts"] = kwargs.get("contexts")
+                return {"faithfulness": 0.88, "answer_relevancy": 0.77}
+
+        search = FakeHybridSearch({"如何配置？": [_hit("gold-1", text="Azure 门户步骤")]})
+        report = EvalRunner(
+            load_settings(),
+            search,
+            _NeedAnswerEvaluator(),
+            answer_fn=lambda query, contexts: f"答:{query}:{contexts[0]}",
+        ).run(path)
+        assert captured["answer"] == "答:如何配置？:Azure 门户步骤"
+        assert captured["contexts"] == ["Azure 门户步骤"]
+        assert report.cases[0].generated_answer == "答:如何配置？:Azure 门户步骤"
+        assert report.cases[0].metrics["faithfulness"] == 0.88
+        assert report.metrics["faithfulness"] == 0.88
+
+    def test_custom_evaluator_skips_answer_fn(self, tmp_path: Path) -> None:
+        """CustomEvaluator 不需要生成答案，不应调用 answer_fn。"""
+        path = tmp_path / "set.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "命中",
+                            "expected_chunk_ids": ["gold-1"],
+                            "expected_sources": [],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        calls: list[str] = []
+        search = FakeHybridSearch({"命中": [_hit("gold-1")]})
+        report = EvalRunner(
+            load_settings(),
+            search,
+            CustomEvaluator(),
+            answer_fn=lambda query, contexts: calls.append(query) or "should-not-run",
+        ).run(path)
+        assert calls == []
+        assert report.cases[0].metrics["hit_rate"] == 1.0
+        assert report.cases[0].generated_answer is None
+
+    def test_answer_generation_error_isolated(self, tmp_path: Path) -> None:
+        """生成答案失败应记入该条 error，不中断整次运行。"""
+        path = tmp_path / "set.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "test_cases": [
+                        {
+                            "query": "q",
+                            "expected_chunk_ids": ["gold-1"],
+                            "expected_sources": [],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        class _NeedAnswerEvaluator:
+            requires_generated_answer = True
+
+            def evaluate(self, *args: Any, **kwargs: Any) -> dict[str, float]:
+                raise AssertionError("不应在生成失败后调用 evaluate")
+
+        def _boom(query: str, contexts: list[str]) -> str:
+            raise RuntimeError("llm down")
+
+        report = EvalRunner(
+            load_settings(),
+            FakeHybridSearch({"q": [_hit("gold-1")]}),
+            _NeedAnswerEvaluator(),
+            answer_fn=_boom,
+        ).run(path)
+        assert report.cases[0].error is not None
+        assert "生成答案失败" in report.cases[0].error
+        assert report.cases[0].metrics == {}
 
 
 @pytest.mark.unit

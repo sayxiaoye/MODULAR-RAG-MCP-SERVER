@@ -33,6 +33,11 @@ class CompositeEvaluator(BaseEvaluator):
         """只读副本，便于测试断言工厂组合结果。"""
         return list(self._evaluators)
 
+    @property
+    def requires_generated_answer(self) -> bool:
+        """任一子评估器需要生成答案时，组合评估也需要。"""
+        return any(item.requires_generated_answer for item in self._evaluators)
+
     def evaluate(
         self,
         query: str,

@@ -149,6 +149,11 @@ class TestEvaluatorFactoryBackends:
         assert isinstance(evaluator, CompositeEvaluator)
         kinds = [type(child) for child in evaluator.evaluators]
         assert kinds == [RagasEvaluator, CustomEvaluator]
+        ragas = evaluator.evaluators[0]
+        assert isinstance(ragas, RagasEvaluator)
+        assert ragas._llm is not None
+        assert ragas._embeddings is not None
+        assert evaluator.requires_generated_answer is True
 
     def test_factory_evaluate_includes_both_metric_sets(
         self,

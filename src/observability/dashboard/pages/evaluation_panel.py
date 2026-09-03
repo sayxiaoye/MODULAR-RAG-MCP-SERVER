@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +12,12 @@ from typing import Any, Callable, Mapping, Sequence
 import streamlit as st
 
 from core.settings import REPO_ROOT, Settings, load_settings, resolve_path
-from observability.evaluation.eval_runner import EvalReport, EvalRunner, load_golden_test_set
+from observability.evaluation.eval_runner import (
+    EvalCaseResult,
+    EvalReport,
+    EvalRunner,
+    load_golden_test_set,
+)
 from observability.evaluation.golden_generator import (
     DEFAULT_CASE_COUNT,
     MAX_CASE_COUNT,
@@ -27,6 +33,15 @@ _BACKEND_MAP: dict[str, list[str]] = {
     "Ragas": ["ragas"],
     "All": ["ragas", "custom"],
 }
+
+# 历史表固定展示的指标列：Custom 两项 + Ragas 三项
+HISTORY_METRIC_KEYS = (
+    "hit_rate",
+    "mrr",
+    "faithfulness",
+    "answer_relevancy",
+    "context_precision",
+)
 
 # (backend_label, test_set_path, collection) -> EvalReport
 RunEvalFn = Callable[[str, str, str], EvalReport]
@@ -156,7 +171,9 @@ def render_evaluation_panel(
         load_deps: 为 False 时不访问真实检索栈与默认 traces 目录。
     """
     st.header("评估面板")
-    st.caption("选择集合生成黄金集，或选用已有 JSON 运行 hit_rate / mrr 评估")
+    st.caption(
+        "Custom 看 hit_rate / mrr；Ragas 会先用项目 LLM 生成答案，再用同一套 LLM/Embedding 做 Judge"
+    )
 
     sets = _merge_golden_sets(golden_sets, load_deps=load_deps)
 
@@ -226,7 +243,7 @@ def render_evaluation_panel(
                     append_eval_history(resolved_history_path, record)
                 st.success(
                     f"评估完成：集合 {selected_collection} · {report.case_count} 条用例 · "
-                    f"hit_rate={report.hit_rate:.4f} · mrr={report.mrr:.4f}"
+                    + _format_success_metrics(report)
                 )
 
     report = st.session_state.get("eval_last_report")
@@ -367,6 +384,40 @@ def _default_run_eval(backend_label: str, test_set_path: str, collection: str) -
     return EvalRunner(settings, hybrid_search, evaluator).run(test_set_path)
 
 
+def _format_success_metrics(report: EvalReport) -> str:
+    """成功提示里带上实际产出的指标，避免 Ragas 只显示 hit_rate=0。"""
+    case_keys: set[str] = set()
+    for item in report.cases:
+        case_keys.update(item.metrics.keys())
+    parts: list[str] = []
+    for key in HISTORY_METRIC_KEYS:
+        if key not in case_keys and key not in report.metrics:
+            continue
+        if key in {"hit_rate", "mrr"} and key not in case_keys:
+            continue
+        value = report.metrics.get(key)
+        if key == "hit_rate" and value is None:
+            value = report.hit_rate
+        if key == "mrr" and value is None:
+            value = report.mrr
+        number = _finite_number(value)
+        if number is None:
+            continue
+        parts.append(f"{key}={number:.4f}")
+    return " · ".join(parts) if parts else "无有效指标"
+
+
+def _finite_number(value: Any) -> float | None:
+    """把可展示的有限浮点数取出。"""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
 def _history_record(
     backend: str,
     test_set_path: str,
@@ -374,8 +425,11 @@ def _history_record(
     *,
     collection: str = "",
 ) -> dict[str, Any]:
-    """把本次报告压成历史趋势可用的摘要。"""
-    return {
+    """把本次报告写入历史：宏观指标 + 各 query 明细，供事后点开查看。"""
+    metric_names = sorted(
+        {key for item in report.cases for key in item.metrics.keys()}
+    )
+    payload: dict[str, Any] = {
         "ran_at": datetime.now(timezone.utc).isoformat(),
         "backend": backend,
         "test_set": test_set_path,
@@ -384,7 +438,79 @@ def _history_record(
         "mrr": report.mrr,
         "case_count": report.case_count,
         "metrics": dict(report.metrics),
+        "metric_names": metric_names,
+        "cases": [item.to_dict() for item in report.cases],
     }
+    for key in HISTORY_METRIC_KEYS:
+        number = _finite_number(report.metrics.get(key))
+        if number is not None and key in metric_names:
+            payload[key] = number
+    return payload
+
+
+def metric_from_history_record(record: Mapping[str, Any], key: str) -> float | None:
+    """从历史行读取一项指标；旧记录没有 Ragas 字段时返回 None。"""
+    names = record.get("metric_names")
+    if isinstance(names, list) and names and key not in names:
+        return None
+    backend = str(record.get("backend") or "").strip()
+    if not names:
+        if key in {"hit_rate", "mrr"} and backend == "Ragas":
+            return None
+        if key in {"faithfulness", "answer_relevancy", "context_precision"} and backend == "Custom":
+            return None
+    metrics = record.get("metrics") if isinstance(record.get("metrics"), Mapping) else {}
+    value = record.get(key)
+    if value is None:
+        value = metrics.get(key) if isinstance(metrics, Mapping) else None
+    return _finite_number(value)
+
+
+def report_from_history_record(record: Mapping[str, Any]) -> EvalReport:
+    """把历史 JSON 还原成 EvalReport，供点开查看明细。"""
+    cases: list[EvalCaseResult] = []
+    raw_cases = record.get("cases")
+    if isinstance(raw_cases, list):
+        for item in raw_cases:
+            if isinstance(item, Mapping):
+                cases.append(_case_from_mapping(item))
+    metrics = dict(record["metrics"]) if isinstance(record.get("metrics"), Mapping) else {}
+    for key in HISTORY_METRIC_KEYS:
+        number = metric_from_history_record(record, key)
+        if number is not None:
+            metrics.setdefault(key, number)
+    hit = metric_from_history_record(record, "hit_rate")
+    mrr = metric_from_history_record(record, "mrr")
+    return EvalReport(
+        hit_rate=hit if hit is not None else float(record.get("hit_rate") or 0.0),
+        mrr=mrr if mrr is not None else float(record.get("mrr") or 0.0),
+        case_count=int(record.get("case_count") or len(cases)),
+        cases=cases,
+        metrics=metrics,
+    )
+
+
+def _case_from_mapping(item: Mapping[str, Any]) -> EvalCaseResult:
+    """还原单条 query 明细。"""
+    metrics_raw = item.get("metrics") if isinstance(item.get("metrics"), Mapping) else {}
+    metrics: dict[str, float] = {}
+    if isinstance(metrics_raw, Mapping):
+        for key, value in metrics_raw.items():
+            number = _finite_number(value)
+            if number is not None:
+                metrics[str(key)] = number
+    error = item.get("error")
+    answer = item.get("generated_answer") or item.get("answer")
+    return EvalCaseResult(
+        query=str(item.get("query") or ""),
+        retrieved_ids=[str(x) for x in item.get("retrieved_ids") or []],
+        golden_ids=[str(x) for x in item.get("golden_ids") or []],
+        expected_sources=[str(x) for x in item.get("expected_sources") or []],
+        retrieved_sources=[str(x) for x in item.get("retrieved_sources") or []],
+        metrics=metrics,
+        error=str(error) if error else None,
+        generated_answer=str(answer) if answer else None,
+    )
 
 
 def _merge_history(
@@ -399,64 +525,129 @@ def _merge_history(
     return load_eval_history(history_path)
 
 
-def _render_report(report: EvalReport) -> None:
+def _render_report(report: EvalReport, *, title: str = "本次结果") -> None:
     """展示宏观指标与各 query 明细表。"""
-    st.subheader("本次结果")
-    metric_items: list[tuple[str, float]] = [
-        ("hit_rate", report.hit_rate),
-        ("mrr", report.mrr),
-    ]
+    st.subheader(title)
+    case_keys: set[str] = set()
+    for item in report.cases:
+        case_keys.update(item.metrics.keys())
+    metric_items: list[tuple[str, float]] = []
+    if "hit_rate" in case_keys:
+        metric_items.append(("hit_rate", report.hit_rate))
+    if "mrr" in case_keys:
+        metric_items.append(("mrr", report.mrr))
     for key, value in sorted(report.metrics.items()):
         if key in {"hit_rate", "mrr"}:
             continue
-        metric_items.append((key, float(value)))
+        number = _finite_number(value)
+        if number is None:
+            continue
+        metric_items.append((key, number))
     columns = st.columns(len(metric_items) or 1)
     for column, (name, value) in zip(columns, metric_items):
         column.metric(name, f"{value:.4f}")
+    if not metric_items:
+        st.warning("没有得到有效指标。若选了 Ragas，请查看明细表的 error 列或终端日志。")
 
     st.markdown("**各 query 明细**")
+    if not report.cases:
+        st.info("这条记录没有保存各 query 明细。重新运行评估后可点开查看。")
+        return
     st.dataframe(_case_rows(report), width="stretch", hide_index=True)
 
 
 def _case_rows(report: EvalReport) -> list[dict[str, Any]]:
-    """把 EvalCaseResult 转成表格行。"""
+    """把 EvalCaseResult 转成表格行；没有的指标不占列，避免整列 None。"""
+    extra_keys: list[str] = []
+    has_hit = False
+    has_mrr = False
+    for item in report.cases:
+        if "hit_rate" in item.metrics:
+            has_hit = True
+        if "mrr" in item.metrics:
+            has_mrr = True
+        for key in item.metrics:
+            if key not in {"hit_rate", "mrr"} and key not in extra_keys:
+                extra_keys.append(key)
     rows: list[dict[str, Any]] = []
     for item in report.cases:
-        rows.append(
-            {
-                "query": item.query,
-                "hit_rate": item.metrics.get("hit_rate"),
-                "mrr": item.metrics.get("mrr"),
-                "retrieved": ", ".join(item.retrieved_ids),
-                "golden": ", ".join(item.golden_ids),
-                "error": item.error or "",
-            }
-        )
+        row: dict[str, Any] = {"query": item.query}
+        if has_hit:
+            row["hit_rate"] = item.metrics.get("hit_rate")
+        if has_mrr:
+            row["mrr"] = item.metrics.get("mrr")
+        for key in extra_keys:
+            row[key] = item.metrics.get(key)
+        row["retrieved"] = ", ".join(item.retrieved_ids)
+        row["golden"] = ", ".join(item.golden_ids)
+        row["answer"] = _truncate_text(item.generated_answer)
+        row["error"] = item.error or ""
+        rows.append(row)
     return rows
 
 
+def _truncate_text(text: str | None, limit: int = 80) -> str:
+    """明细表里压缩生成答案，避免撑爆列宽。"""
+    if not text:
+        return ""
+    stripped = " ".join(str(text).split())
+    if len(stripped) <= limit:
+        return stripped
+    return stripped[: limit - 1] + "…"
+
+
 def _render_history(records: Sequence[Mapping[str, Any]]) -> None:
-    """两条及以上历史时画 hit_rate / mrr 趋势。"""
-    st.subheader("历史趋势")
-    if len(records) < 2:
-        st.caption("再运行一次评估后可对比历史趋势。")
+    """历史列表展示 Custom + Ragas 指标，并可选择一条查看明细。"""
+    st.subheader("历史记录")
+    if not records:
+        st.caption("运行评估后将在此保存记录，可点开查看当时的各 query 明细。")
         return
-    chart = {
-        "hit_rate": [float(item.get("hit_rate") or 0.0) for item in records],
-        "mrr": [float(item.get("mrr") or 0.0) for item in records],
-    }
-    st.line_chart(chart)
-    st.dataframe(
-        [
-            {
-                "时间": str(item.get("ran_at") or "—"),
-                "集合": str(item.get("collection") or "—"),
-                "后端": str(item.get("backend") or "—"),
-                "hit_rate": item.get("hit_rate"),
-                "mrr": item.get("mrr"),
-            }
-            for item in records
-        ],
-        width="stretch",
-        hide_index=True,
-    )
+
+    ordered = list(records)
+    st.dataframe(_history_table_rows(ordered), width="stretch", hide_index=True)
+
+    labels = ["（选择一条查看明细）"]
+    for index, item in enumerate(ordered):
+        when = str(item.get("ran_at") or "—")
+        backend = str(item.get("backend") or "—")
+        collection = str(item.get("collection") or "—")
+        labels.append(f"{index + 1}. {when} · {backend} · {collection}")
+    selected = st.selectbox("查看历史明细", list(range(len(labels))), format_func=lambda i: labels[i])
+    if int(selected) > 0:
+        picked = ordered[int(selected) - 1]
+        _render_report(report_from_history_record(picked), title="历史详情")
+
+    chart_keys = [
+        key
+        for key in HISTORY_METRIC_KEYS
+        if any(metric_from_history_record(item, key) is not None for item in ordered)
+    ]
+    if len(ordered) >= 2 and chart_keys:
+        st.subheader("历史趋势")
+        chart = {
+            key: [
+                metric_from_history_record(item, key) or 0.0
+                for item in ordered
+            ]
+            for key in chart_keys
+        }
+        st.line_chart(chart)
+    elif len(ordered) < 2:
+        st.caption("再运行一次评估后可对比历史趋势。")
+
+
+def _history_table_rows(records: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """历史表：时间/集合/后端 + Custom 与 Ragas 指标。"""
+    rows: list[dict[str, Any]] = []
+    for item in records:
+        row: dict[str, Any] = {
+            "时间": str(item.get("ran_at") or "—"),
+            "集合": str(item.get("collection") or "—"),
+            "后端": str(item.get("backend") or "—"),
+            "条数": item.get("case_count") or "",
+        }
+        for key in HISTORY_METRIC_KEYS:
+            number = metric_from_history_record(item, key)
+            row[key] = f"{number:.4f}" if number is not None else "—"
+        rows.append(row)
+    return rows

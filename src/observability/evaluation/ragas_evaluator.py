@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+import asyncio
+import math
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Mapping, TypeVar
 
 from core.settings import EvaluationSettings
 from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError
+
+_T = TypeVar("_T")
 
 # Ragas 默认产出的指标名（与 spec 一致）
 RAGAS_METRIC_NAMES = ("faithfulness", "answer_relevancy", "context_precision")
@@ -33,10 +38,17 @@ class RagasEvaluator(BaseEvaluator):
         *,
         evaluate_fn: EvaluateFn | None = None,
         llm: Any | None = None,
+        embeddings: Any | None = None,
     ) -> None:
         self.settings = settings
         self._evaluate_fn = evaluate_fn
         self._llm = llm
+        self._embeddings = embeddings
+
+    @property
+    def requires_generated_answer(self) -> bool:
+        """Faithfulness / Answer Relevancy 依赖生成答案字段。"""
+        return True
 
     def evaluate(
         self,
@@ -68,7 +80,7 @@ class RagasEvaluator(BaseEvaluator):
         payload = _build_payload(query, retrieved_ids, golden_ids, kwargs)
         runner = self._evaluate_fn or _run_ragas_evaluate
         try:
-            raw = runner(payload, llm=self._llm)
+            raw = runner(payload, llm=self._llm, embeddings=self._embeddings)
         except ImportError:
             raise
         except Exception as exc:
@@ -76,7 +88,9 @@ class RagasEvaluator(BaseEvaluator):
 
         metrics = _normalize_metrics(raw)
         if "faithfulness" not in metrics or "answer_relevancy" not in metrics:
-            raise EvaluatorError("Ragas 结果缺少 faithfulness 或 answer_relevancy")
+            raise EvaluatorError(
+                "Ragas 结果缺少有效的 faithfulness 或 answer_relevancy"
+            )
 
         if self.settings and self.settings.metrics:
             allowed = set(self.settings.metrics)
@@ -123,40 +137,117 @@ def _build_payload(
 
 
 def _load_ragas() -> tuple[Any, list[Any]]:
-    """延迟导入 ragas；缺失时给出可执行的安装提示。"""
+    """延迟导入 ragas 指标类；每次返回新实例，避免改到模块级单例。"""
     try:
-        from ragas import evaluate as ragas_evaluate
-        from ragas.metrics import answer_relevancy, context_precision, faithfulness
+        from ragas.metrics import AnswerRelevancy, Faithfulness
     except ImportError as exc:
         raise ImportError(
             "未安装 Ragas。请执行: python -m pip install '.[evaluation]'"
         ) from exc
-    return ragas_evaluate, [faithfulness, answer_relevancy, context_precision]
-
-
-def _run_ragas_evaluate(payload: Mapping[str, Any], llm: Any | None = None) -> Mapping[str, Any]:
-    """调用 ragas.evaluate；单条样本，返回指标映射。"""
-    ragas_evaluate, metrics = _load_ragas()
+    # 黄金集通常没有自然语言 reference，用 without_reference 避免拿 chunk_id 当标准答案
     try:
-        from datasets import Dataset
-    except ImportError as exc:
-        raise ImportError(
-            "未安装 datasets（Ragas 依赖）。请执行: python -m pip install '.[evaluation]'"
-        ) from exc
+        from ragas.metrics import LLMContextPrecisionWithoutReference
 
-    dataset = Dataset.from_dict(
-        {
-            "question": [payload["question"]],
-            "answer": [payload["answer"]],
-            "contexts": [list(payload["contexts"])],
-            "ground_truth": [payload["ground_truth"]],
-        }
+        context_metric = LLMContextPrecisionWithoutReference()
+    except Exception:
+        from ragas.metrics import ContextPrecision as context_metric_cls
+
+        context_metric = context_metric_cls()
+    # strictness=1：不要 gather 多次 Judge，避免 exclusive_gpu 并发抢模型
+    return None, [Faithfulness(), AnswerRelevancy(strictness=1), context_metric]
+
+
+def _run_sync_in_fresh_loop(func: Callable[[], _T]) -> _T:
+    """在独立线程执行，避免占用 Streamlit 的事件循环。"""
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="ragas-eval") as pool:
+        return pool.submit(func).result()
+
+
+def _run_ragas_evaluate(
+    payload: Mapping[str, Any],
+    llm: Any | None = None,
+    embeddings: Any | None = None,
+) -> Mapping[str, Any]:
+    """
+    对单条样本打分。
+
+    不调用 ``ragas.evaluate()``：它内部 ``asyncio.wait_for`` 在 Python 3.14 +
+    nest_asyncio 下会立刻 ``Timeout should be used inside a task`` 并返回 nan。
+    """
+    _, metrics = _load_ragas()
+    return _run_sync_in_fresh_loop(
+        lambda: _score_metrics_without_evaluate(payload, llm, embeddings, metrics)
     )
-    kwargs: dict[str, Any] = {"metrics": metrics}
-    if llm is not None:
-        kwargs["llm"] = llm
-    result = ragas_evaluate(dataset, **kwargs)
-    return _result_to_mapping(result)
+
+
+def _score_metrics_without_evaluate(
+    payload: Mapping[str, Any],
+    llm: Any,
+    embeddings: Any,
+    metrics: list[Any],
+) -> dict[str, Any]:
+    """在新事件循环里逐个 ``_single_turn_ascore``，绕过 wait_for。"""
+    from ragas.dataset_schema import SingleTurnSample
+    from ragas.metrics.base import MetricWithEmbeddings, MetricWithLLM
+    from ragas.run_config import RunConfig
+
+    from observability.evaluation.ragas_adapters import (
+        wrap_project_embeddings_for_ragas,
+        wrap_project_llm_for_ragas,
+    )
+
+    wrapped_llm = wrap_project_llm_for_ragas(llm)
+    wrapped_emb = wrap_project_embeddings_for_ragas(embeddings)
+    run_config = RunConfig(max_workers=1, timeout=180)
+    for metric in metrics:
+        if isinstance(metric, MetricWithLLM) and metric.llm is None:
+            metric.llm = wrapped_llm
+        if isinstance(metric, MetricWithEmbeddings) and metric.embeddings is None:
+            metric.embeddings = wrapped_emb
+        metric.init(run_config)
+
+    sample = SingleTurnSample(
+        user_input=payload["question"],
+        response=payload["answer"],
+        retrieved_contexts=list(payload["contexts"]),
+        reference=str(payload.get("ground_truth") or ""),
+    )
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    raw: dict[str, Any] = {}
+    errors: list[str] = []
+    try:
+        for metric in metrics:
+            try:
+                score = loop.run_until_complete(
+                    metric._single_turn_ascore(sample=sample, callbacks=[])
+                )
+                number = _finite_float(score)
+                if number is None:
+                    errors.append(
+                        f"{metric.name}: 返回非数值 {score!r}（Judge 输出可能无法解析）"
+                    )
+                else:
+                    raw[metric.name] = number
+            except Exception as exc:
+                errors.append(f"{metric.name}: {type(exc).__name__}: {exc}")
+    finally:
+        try:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+        except Exception:
+            pass
+        loop.close()
+        asyncio.set_event_loop(None)
+
+    if "faithfulness" not in raw or "answer_relevancy" not in raw:
+        detail = "; ".join(errors) if errors else "无有效分数"
+        raise EvaluatorError(f"Ragas 指标计算失败: {detail}")
+    return raw
 
 
 def _result_to_mapping(result: Any) -> dict[str, Any]:
@@ -177,15 +268,26 @@ def _result_to_mapping(result: Any) -> dict[str, Any]:
 
 
 def _normalize_metrics(raw: Mapping[str, Any]) -> dict[str, float]:
-    """把 Ragas 原始列名归一成 spec 中的三个指标名。"""
+    """把 Ragas 原始列名归一成 spec 中的三个指标名；丢弃 nan/inf。"""
     normalized: dict[str, float] = {}
     for canonical, aliases in _METRIC_ALIASES.items():
         for alias in aliases:
             if alias not in raw:
                 continue
-            try:
-                normalized[canonical] = float(raw[alias])
-            except (TypeError, ValueError):
+            value = _finite_float(raw[alias])
+            if value is None:
                 continue
+            normalized[canonical] = value
             break
     return normalized
+
+
+def _finite_float(value: Any) -> float | None:
+    """把可解析的有限浮点数取出；nan 视为无效。"""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number):
+        return None
+    return number

@@ -584,6 +584,8 @@ MCP 协议的 Tool 返回格式支持多种内容类型（`content` 数组），
 - **设计思路**：
 	- 定义统一的 `Evaluator` 接口，暴露 `evaluate(query, retrieved_chunks, generated_answer, ground_truth) -> metrics` 方法。
 	- 各评估框架实现该接口，输出标准化的指标字典。
+	- **Ragas Judge** 使用 `settings.llm` / `settings.embedding`（经工厂包装，走 llamacpp 按需启停或已配置的 OpenAI key），不回退 ragas 默认 OpenAI。
+	- **生成答案**：QueryPipeline 只拼检索结果；选 Ragas / All 时 `EvalRunner` 在 `evaluate()` 前用项目 LLM 根据 query + 检索上下文生成答案，再交给 Faithfulness / Answer Relevancy。
 
 - **可选评估框架**：
 
@@ -1570,6 +1572,8 @@ smart-knowledge-hub/
 │           ├── __init__.py
 │           ├── eval_runner.py           # 评估执行器
 │           ├── golden_generator.py      # 按集合生成黄金测试集（LLM 出题 + 真实 chunk_id）
+│           ├── answer_generator.py      # 评估前根据检索上下文生成 RAG 答案
+│           ├── ragas_adapters.py        # 项目 LLM/Embedding → Ragas Judge 包装
 │           ├── ragas_evaluator.py       # Ragas 评估实现
 │           └── composite_evaluator.py   # 组合评估器 (多后端并行)
 
@@ -1615,6 +1619,7 @@ smart-knowledge-hub/
 │   │   ├── test_trace_context.py        # F1: 追踪上下文测试
 │   │   ├── test_jsonl_logger.py         # F2: JSON Lines 日志测试
 │   │   ├── test_golden_generator.py     # 黄金集生成（取样/LLM 出题/落盘）
+│   │   ├── test_answer_generator.py     # 评估答案生成 + Ragas Judge 适配
 │   │   └── ...                          # 其他已有单元测试
 │   ├── integration/                     # 集成测试
 │   │   ├── test_ingestion_pipeline.py
@@ -1726,8 +1731,10 @@ smart-knowledge-hub/
 | `dashboard/services/trace_service.py` | Trace 数据服务 | 解析 traces.jsonl，按 trace_type 分类 |
 | `dashboard/services/data_service.py` | 数据浏览服务 | 封装 ChromaStore/ImageStorage 读取 |
 | `dashboard/services/config_service.py` | 配置读取服务 | 封装 Settings 展示 |
-| `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，指标计算，报告生成 |
+| `evaluation/eval_runner.py` | 评估执行 | 黄金测试集，先生成答案（Ragas），再计算指标 |
 | `evaluation/golden_generator.py` | 黄金集生成 | 按集合取样 chunk，LLM 出题，真实 id 落盘 JSON |
+| `evaluation/answer_generator.py` | RAG 答案生成 | 评估链路用 query + contexts 调用项目 LLM |
+| `evaluation/ragas_adapters.py` | Ragas Judge 适配 | BaseLLM.chat / BaseEmbedding.embed 接到 ragas |
 | `evaluation/ragas_evaluator.py` | Ragas 评估 | Faithfulness, Answer Relevancy, Context Precision |
 | `evaluation/composite_evaluator.py` | 组合评估器 | 多后端并行执行，结果汇总 |
 
@@ -3149,13 +3156,16 @@ dashboard:
 - **目标**：实现 `ragas_evaluator.py`：封装 Ragas 框架，实现 `BaseEvaluator` 接口。
 - **修改文件**：
   - `src/observability/evaluation/ragas_evaluator.py`（新增）
-  - `src/libs/evaluator/evaluator_factory.py`（注册 ragas provider）
+  - `src/observability/evaluation/ragas_adapters.py`（项目 LLM/Embedding → Ragas Judge）
+  - `src/libs/evaluator/evaluator_factory.py`（注册 ragas provider，注入 Judge）
   - `tests/unit/test_ragas_evaluator.py`（新增）
 - **实现类/函数**：
-  - `RagasEvaluator(BaseEvaluator)`：实现 `evaluate()` 方法
+  - `RagasEvaluator(BaseEvaluator)`：实现 `evaluate()` 方法；`requires_generated_answer=True`
   - 支持指标：Faithfulness, Answer Relevancy, Context Precision
+  - Judge 使用 `settings.llm` / `settings.embedding`（工厂注入并包装），不回退 ragas 默认 OpenAI
+  - 不调用 `ragas.evaluate()`（Python 3.14 + nest_asyncio 下 `wait_for` 会立刻 Timeout/nan）；改为独立线程里 `_single_turn_ascore`
   - 优雅降级：Ragas 未安装时抛出明确的 `ImportError` 提示
-- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典。
+- **验收标准**：mock LLM 环境下，`evaluate()` 返回包含 faithfulness/answer_relevancy 的 metrics 字典；真实路径 Judge 走项目 LLM。
 - **测试方法**：`pytest -q tests/unit/test_ragas_evaluator.py`。
 
 ### H2：CompositeEvaluator 实现 ✅
@@ -3175,12 +3185,14 @@ dashboard:
 - **前置依赖**：D5（HybridSearch）、H1-H2（评估器）
 - **修改文件**：
   - `src/observability/evaluation/eval_runner.py`（新增）
+  - `src/observability/evaluation/answer_generator.py`（评估前生成 RAG 答案）
   - `tests/fixtures/golden_test_set.json`（新增：黄金测试集）
   - `scripts/evaluate.py`（新增：评估运行脚本）
 - **实现类/函数**：
   - `EvalRunner.__init__(settings, hybrid_search, evaluator)`
   - `EvalRunner.run(test_set_path) -> EvalReport`：运行评估并返回报告
-  - `EvalReport`：包含 hit_rate, mrr, 各 query 结果详情
+  - Ragas / All：检索后先用项目 LLM 根据 query + contexts 生成答案，再 `evaluate(..., answer=..., contexts=...)`
+  - `EvalReport`：包含 hit_rate, mrr, 各 query 结果详情（含 `generated_answer`）
 - **golden_test_set.json 格式**：
   ```json
   {
@@ -3204,8 +3216,8 @@ dashboard:
 - **实现要点**：
   - 选择**集合**（与 CLI `--collection` 对齐）、评估后端与 golden test set
   - **生成黄金集**：从所选集合取样 chunk，LLM 出题（失败则规则问句），`expected_chunk_ids` 使用真实向量 id，JSON 写入 `data/eval/`，下拉框可立即选择
-  - 点击运行，展示评估结果（hit_rate、mrr、各 query 明细）
-  - 可选：历史评估结果对比图
+  - 点击运行，展示评估结果（hit_rate、mrr、Ragas 指标、生成答案、各 query 明细）
+  - 历史记录表同时展示 Custom（hit_rate/mrr）与 Ragas（faithfulness/answer_relevancy/context_precision）；可选择一条查看当时明细
 - **验收标准**：可在 Dashboard 中运行评估并查看指标。
 - **测试方法**：手动验证。
 

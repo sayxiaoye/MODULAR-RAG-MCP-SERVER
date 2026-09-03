@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import Any, Mapping
 
 import pytest
@@ -9,7 +11,7 @@ import pytest
 from core.settings import EvaluationSettings, Settings, load_settings
 from libs.evaluator.base_evaluator import EvaluatorError
 from libs.evaluator.evaluator_factory import EvaluatorFactory, EvaluatorFactoryError
-from observability.evaluation.ragas_evaluator import RagasEvaluator
+from observability.evaluation.ragas_evaluator import RagasEvaluator, _run_sync_in_fresh_loop
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +25,7 @@ def _reset_evaluator_factory() -> None:
 def _fake_ragas_scores(
     payload: Mapping[str, Any],
     llm: Any | None = None,
+    embeddings: Any | None = None,
 ) -> dict[str, float]:
     """模拟 Ragas 在 mock LLM 下返回的三项指标。"""
     assert payload["question"]
@@ -100,6 +103,79 @@ class TestRagasEvaluator:
         assert trace.stages[0]["name"] == "evaluation"
         assert trace.stages[0]["method"] == "ragas"
 
+    def test_forwards_injected_llm_and_embeddings(self) -> None:
+        """注入的 Judge LLM / Embedding 应原样传给 evaluate_fn。"""
+        seen: dict[str, Any] = {}
+
+        def _capture(
+            payload: Mapping[str, Any],
+            llm: Any | None = None,
+            embeddings: Any | None = None,
+        ) -> dict[str, float]:
+            seen["llm"] = llm
+            seen["embeddings"] = embeddings
+            seen["answer"] = payload.get("answer")
+            return {
+                "faithfulness": 0.9,
+                "answer_relevancy": 0.8,
+                "context_precision": 0.7,
+            }
+
+        marker_llm = object()
+        marker_emb = object()
+        evaluator = RagasEvaluator(
+            evaluate_fn=_capture,
+            llm=marker_llm,
+            embeddings=marker_emb,
+        )
+        evaluator.evaluate("q", ["a"], ["a"], answer="generated")
+        assert seen["llm"] is marker_llm
+        assert seen["embeddings"] is marker_emb
+        assert seen["answer"] == "generated"
+
+    def test_requires_generated_answer(self) -> None:
+        """Ragas 路径需要评估前生成答案。"""
+        assert RagasEvaluator(evaluate_fn=_fake_ragas_scores).requires_generated_answer is True
+
+    def test_nan_metrics_are_rejected(self) -> None:
+        """ragas 在事件循环冲突时会返回 nan，不能当成有效分数。"""
+
+        def _nan_scores(
+            payload: Mapping[str, Any],
+            llm: Any | None = None,
+            embeddings: Any | None = None,
+        ) -> dict[str, float]:
+            return {
+                "faithfulness": float("nan"),
+                "answer_relevancy": float("nan"),
+                "context_precision": float("nan"),
+            }
+
+        evaluator = RagasEvaluator(evaluate_fn=_nan_scores)
+        with pytest.raises(EvaluatorError, match="faithfulness"):
+            evaluator.evaluate("q", ["a"], ["a"], answer="x")
+
+    def test_fresh_loop_isolates_from_running_parent(self) -> None:
+        """父协程已有事件循环时，打分应在新线程里跑。"""
+        seen: dict[str, Any] = {}
+
+        def inner() -> int:
+            try:
+                asyncio.get_running_loop()
+                seen["inner_running"] = True
+            except RuntimeError:
+                seen["inner_running"] = False
+            seen["thread"] = threading.current_thread().name
+            return 7
+
+        async def parent() -> int:
+            seen["parent_thread"] = threading.current_thread().name
+            return _run_sync_in_fresh_loop(inner)
+
+        assert asyncio.run(parent()) == 7
+        assert seen["inner_running"] is False
+        assert seen["thread"] != seen["parent_thread"]
+
 
 @pytest.mark.unit
 class TestRagasFactoryRouting:
@@ -125,6 +201,10 @@ class TestRagasFactoryRouting:
         )
         evaluator = EvaluatorFactory.create(settings)
         assert isinstance(evaluator, RagasEvaluator)
+        assert evaluator._llm is not None
+        assert hasattr(evaluator._llm, "chat")
+        assert evaluator._embeddings is not None
+        assert hasattr(evaluator._embeddings, "embed")
 
     def test_unknown_provider_still_raises(self) -> None:
         """未注册 provider 仍应失败。"""

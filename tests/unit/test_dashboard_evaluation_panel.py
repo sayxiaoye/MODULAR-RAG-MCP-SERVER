@@ -15,6 +15,8 @@ from observability.dashboard.pages.evaluation_panel import (
     backends_for_label,
     discover_eval_collections,
     load_eval_history,
+    metric_from_history_record,
+    report_from_history_record,
 )
 
 
@@ -64,6 +66,70 @@ class TestEvalHistoryStore:
         assert len(records) == 2
         assert records[0]["hit_rate"] == 0.2
         assert records[1]["backend"] == "All"
+
+
+@pytest.mark.unit
+class TestEvalHistoryMetrics:
+    """历史记录应保留 Ragas 指标，并能还原各 query 明细。"""
+
+    def test_ragas_metrics_shown_custom_metrics_hidden(self) -> None:
+        """Ragas 行展示三项生成指标，hit_rate / mrr 显示为无。"""
+        from observability.dashboard.pages.evaluation_panel import _history_table_rows
+
+        rows = _history_table_rows(
+            [
+                {
+                    "ran_at": "2026-09-03T00:00:00+00:00",
+                    "backend": "Ragas",
+                    "collection": "new456",
+                    "hit_rate": 0.0,
+                    "mrr": 0.0,
+                    "metric_names": ["faithfulness", "answer_relevancy", "context_precision"],
+                    "metrics": {
+                        "faithfulness": 0.81,
+                        "answer_relevancy": 0.72,
+                        "context_precision": 0.66,
+                        "hit_rate": 0.0,
+                        "mrr": 0.0,
+                    },
+                }
+            ]
+        )
+        assert rows[0]["hit_rate"] == "—"
+        assert rows[0]["mrr"] == "—"
+        assert rows[0]["faithfulness"] == "0.8100"
+        assert rows[0]["answer_relevancy"] == "0.7200"
+        assert rows[0]["context_precision"] == "0.6600"
+
+    def test_old_ragas_row_without_metric_names(self) -> None:
+        """升级前的 Ragas 记录即使 hit_rate=0 也不应冒充检索指标。"""
+        assert metric_from_history_record({"backend": "Ragas", "hit_rate": 0.0}, "hit_rate") is None
+        assert metric_from_history_record({"backend": "Custom", "hit_rate": 0.875}, "hit_rate") == 0.875
+
+    def test_report_from_history_restores_cases(self) -> None:
+        """点开历史时应还原 query / answer / 指标。"""
+        report = report_from_history_record(
+            {
+                "backend": "Ragas",
+                "case_count": 1,
+                "metric_names": ["faithfulness", "answer_relevancy"],
+                "metrics": {"faithfulness": 0.9, "answer_relevancy": 0.8},
+                "cases": [
+                    {
+                        "query": "深渊的同义词？",
+                        "retrieved_ids": ["abc"],
+                        "golden_ids": ["abc"],
+                        "expected_sources": [],
+                        "retrieved_sources": [],
+                        "metrics": {"faithfulness": 0.9, "answer_relevancy": 0.8},
+                        "generated_answer": "同义词是深谷。",
+                    }
+                ],
+            }
+        )
+        assert report.cases[0].query == "深渊的同义词？"
+        assert report.cases[0].generated_answer == "同义词是深谷。"
+        assert report.cases[0].metrics["faithfulness"] == 0.9
 
 
 @pytest.mark.unit
@@ -277,6 +343,54 @@ class TestEvaluationPanelPage:
         app.run()
         assert not app.exception
         subheaders = [str(item.value) for item in app.subheader]
+        assert any("历史记录" in text for text in subheaders)
         assert any("历史趋势" in text for text in subheaders)
         captions = [str(item.value) for item in app.caption]
         assert not any("再运行一次评估后可对比历史趋势" in text for text in captions)
+        assert "查看历史明细" in [item.label for item in app.selectbox]
+
+    def test_select_history_shows_case_details(self) -> None:
+        """下拉选择一条历史后应展示当时的 query 明细。"""
+
+        def page_script() -> None:
+            from core.settings import REPO_ROOT
+            from observability.dashboard.pages.evaluation_panel import render_evaluation_panel
+
+            render_evaluation_panel(
+                golden_sets=[REPO_ROOT / "tests" / "fixtures" / "golden_test_set.json"],
+                history_records=[
+                    {
+                        "ran_at": "2026-09-03T00:00:00+00:00",
+                        "backend": "Ragas",
+                        "collection": "new456",
+                        "metric_names": ["faithfulness", "answer_relevancy"],
+                        "metrics": {"faithfulness": 0.81, "answer_relevancy": 0.7},
+                        "case_count": 1,
+                        "cases": [
+                            {
+                                "query": "深渊的同义词？",
+                                "retrieved_ids": ["abc"],
+                                "golden_ids": ["abc"],
+                                "expected_sources": [],
+                                "retrieved_sources": [],
+                                "metrics": {"faithfulness": 0.81, "answer_relevancy": 0.7},
+                                "generated_answer": "同义词是深谷。",
+                            }
+                        ],
+                    }
+                ],
+                load_deps=False,
+            )
+
+        app = AppTest.from_function(page_script, default_timeout=30)
+        app.run()
+        assert not app.exception
+        picker = next(item for item in app.selectbox if item.label == "查看历史明细")
+        picker.select(1).run()
+        assert not app.exception
+        subheaders = [str(item.value) for item in app.subheader]
+        assert any("历史详情" in text for text in subheaders)
+        metric_labels = [item.label for item in app.metric]
+        assert "faithfulness" in metric_labels
+        body = " ".join(str(item.value) for item in app.markdown)
+        assert "各 query 明细" in body

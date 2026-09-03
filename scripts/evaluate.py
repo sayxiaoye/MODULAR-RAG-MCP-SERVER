@@ -114,6 +114,15 @@ def render_report(report: EvalReport, *, as_json: bool = False, out: TextIO | No
         for key in ("hit_rate", "mrr"):
             if key in case.metrics:
                 print(f"{key}: {case.metrics[key]:.4f}", file=sink)
+        for key in sorted(case.metrics):
+            if key in {"hit_rate", "mrr"}:
+                continue
+            print(f"{key}: {case.metrics[key]:.4f}", file=sink)
+        if case.generated_answer:
+            preview = case.generated_answer.replace("\n", " ")
+            if len(preview) > 200:
+                preview = preview[:199] + "…"
+            print(f"answer: {preview}", file=sink)
         print(f"retrieved: {', '.join(case.retrieved_ids) or '(empty)'}", file=sink)
         print(f"golden: {', '.join(case.golden_ids)}", file=sink)
 

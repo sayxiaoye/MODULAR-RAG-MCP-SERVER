@@ -36,6 +36,11 @@ class BaseEvaluator(ABC):
             指标名 -> 数值 的字典，例如 hit_rate、mrr。
         """
 
+    @property
+    def requires_generated_answer(self) -> bool:
+        """Ragas 等生成类指标需要评估前先根据检索上下文生成答案。"""
+        return False
+
     def _validate_inputs(
         self,
         query: str,

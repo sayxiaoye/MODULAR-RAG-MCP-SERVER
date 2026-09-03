@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from core.settings import Settings
 from libs.evaluator.base_evaluator import BaseEvaluator
+from libs.llm.base_llm import BaseLLM
 
 
 class EvalRunnerError(Exception):
@@ -26,6 +28,7 @@ class EvalCaseResult:
     retrieved_sources: list[str]
     metrics: dict[str, float]
     error: str | None = None
+    generated_answer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """序列化为可 JSON 化的字典。"""
@@ -37,6 +40,8 @@ class EvalCaseResult:
             "retrieved_sources": list(self.retrieved_sources),
             "metrics": dict(self.metrics),
         }
+        if self.generated_answer:
+            payload["generated_answer"] = self.generated_answer
         if self.error:
             payload["error"] = self.error
         return payload
@@ -149,12 +154,17 @@ class EvalRunner:
         settings: Settings,
         hybrid_search: Any,
         evaluator: BaseEvaluator,
+        *,
+        answer_llm: BaseLLM | None = None,
+        answer_fn: Callable[[str, list[str]], str] | None = None,
     ) -> None:
         """
         Args:
             settings: 全局配置（用于 top_k 等）。
             hybrid_search: 具备 ``search(query, ...)`` 的混合检索器。
             evaluator: Custom / Ragas / Composite 等 BaseEvaluator。
+            answer_llm: 生成答案用的项目 LLM；缺省且需要答案时由工厂创建。
+            answer_fn: 测试注入的 ``(query, contexts) -> answer``，优先于 answer_llm。
         """
         if hybrid_search is None:
             raise EvalRunnerError("hybrid_search 不能为空")
@@ -163,6 +173,8 @@ class EvalRunner:
         self._settings = settings
         self._hybrid_search = hybrid_search
         self._evaluator = evaluator
+        self._answer_llm = answer_llm
+        self._answer_fn = answer_fn
 
     def run(self, test_set_path: str | Path) -> EvalReport:
         """
@@ -198,12 +210,27 @@ class EvalRunner:
             )
 
         retrieved_ids, retrieved_sources, texts = _unpack_hits(hits)
+        answer: str | None = None
+        if self._evaluator.requires_generated_answer:
+            try:
+                answer = self._resolve_answer(query, texts)
+            except Exception as exc:
+                return EvalCaseResult(
+                    query=query,
+                    retrieved_ids=retrieved_ids,
+                    golden_ids=golden_ids,
+                    expected_sources=expected_sources,
+                    retrieved_sources=retrieved_sources,
+                    metrics={},
+                    error=f"生成答案失败: {exc}",
+                )
         try:
             metrics = self._evaluator.evaluate(
                 query,
                 retrieved_ids,
                 golden_ids,
                 contexts=texts,
+                answer=answer,
             )
         except Exception as exc:
             return EvalCaseResult(
@@ -214,6 +241,7 @@ class EvalRunner:
                 retrieved_sources=retrieved_sources,
                 metrics={},
                 error=f"评估失败: {exc}",
+                generated_answer=answer,
             )
         return EvalCaseResult(
             query=query,
@@ -222,7 +250,22 @@ class EvalRunner:
             expected_sources=expected_sources,
             retrieved_sources=retrieved_sources,
             metrics={key: float(value) for key, value in metrics.items()},
+            generated_answer=answer,
         )
+
+    def _resolve_answer(self, query: str, texts: list[str]) -> str:
+        """生成供 Ragas 使用的 RAG 答案；测试可注入 answer_fn。"""
+        if self._answer_fn is not None:
+            return self._answer_fn(query, texts)
+        llm = self._answer_llm
+        if llm is None:
+            from libs.llm.llm_factory import LLMFactory
+
+            llm = LLMFactory.create(self._settings)
+            self._answer_llm = llm
+        from observability.evaluation.answer_generator import generate_rag_answer
+
+        return generate_rag_answer(query, texts, llm)
 
 
 def _unpack_hits(hits: Sequence[Any]) -> tuple[list[str], list[str], list[str]]:
@@ -256,7 +299,13 @@ def _build_report(results: list[EvalCaseResult]) -> EvalReport:
         hit_rates.append(float(metrics.get("hit_rate", 0.0)))
         mrrs.append(float(metrics.get("mrr", 0.0)))
         for key, value in metrics.items():
-            extras.setdefault(key, []).append(float(value))
+            try:
+                number = float(value)
+            except (TypeError, ValueError):
+                continue
+            if not math.isfinite(number):
+                continue
+            extras.setdefault(key, []).append(number)
 
     aggregated = {key: _mean(values) for key, values in extras.items()}
     hit_rate = _mean(hit_rates)

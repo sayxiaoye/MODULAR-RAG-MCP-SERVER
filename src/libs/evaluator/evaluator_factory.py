@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Type
+from typing import Any, Callable, Dict, Type
 
 from core.settings import EvaluationSettings, Settings
 from libs.evaluator.base_evaluator import BaseEvaluator, EvaluatorError
@@ -58,42 +58,82 @@ def _resolve_backend_names(settings: EvaluationSettings) -> list[str]:
     return names
 
 
-def _construct_evaluator(settings: EvaluationSettings, provider: str) -> BaseEvaluator:
+def _construct_evaluator(
+    eval_settings: EvaluationSettings,
+    provider: str,
+    app_settings: Settings,
+) -> BaseEvaluator:
     """按已归一化的 provider 名实例化注册表中的实现。"""
     if provider not in _EVALUATOR_REGISTRY:
         known = ", ".join(sorted(_EVALUATOR_REGISTRY)) or "（无）"
         raise EvaluatorFactoryError(
             f"未知的 Evaluator provider: {provider!r}，已注册: {known}"
         )
-    return _EVALUATOR_REGISTRY[provider](settings)
+    cls = _EVALUATOR_REGISTRY[provider]
+    if provider == "ragas":
+        return cls(
+            eval_settings,
+            llm=_create_judge_llm(app_settings),
+            embeddings=_create_judge_embeddings(app_settings),
+        )
+    return cls(eval_settings)
 
 
-def _default_constructor(settings: EvaluationSettings) -> BaseEvaluator:
+def _create_judge_llm(settings: Settings) -> Any:
+    """用项目 LLM 工厂创建 Ragas Judge，保证走 llamacpp 按需启停或 OpenAI key。"""
+    from libs.llm.llm_factory import LLMFactory
+
+    try:
+        return LLMFactory.create(settings)
+    except Exception as exc:
+        raise EvaluatorFactoryError(
+            f"无法为 Ragas Judge 创建 LLM（请检查 settings.llm 或 OPENAI_API_KEY）: {exc}"
+        ) from exc
+
+
+def _create_judge_embeddings(settings: Settings) -> Any:
+    """用项目 Embedding 工厂创建 Ragas 向量后端，避免回退 OpenAI embedding。"""
+    from libs.embedding.embedding_factory import EmbeddingFactory
+
+    try:
+        return EmbeddingFactory.create(settings)
+    except Exception as exc:
+        raise EvaluatorFactoryError(
+            f"无法为 Ragas 创建 Embedding（请检查 settings.embedding）: {exc}"
+        ) from exc
+
+
+def _default_constructor(settings: Settings) -> BaseEvaluator:
     """backends 两项及以上则组合；一项用该 backend；否则回退 provider。"""
-    names = _resolve_backend_names(settings)
+    eval_settings = settings.evaluation
+    names = _resolve_backend_names(eval_settings)
     if len(names) >= 2:
         # 延迟导入，避免 factory ↔ evaluation 包循环
         from observability.evaluation.composite_evaluator import CompositeEvaluator
 
-        evaluators = [_construct_evaluator(settings, name) for name in names]
+        evaluators = [_construct_evaluator(eval_settings, name, settings) for name in names]
         return CompositeEvaluator(evaluators)
     if len(names) == 1:
-        return _construct_evaluator(settings, names[0])
-    return _construct_evaluator(settings, _normalize_backend(settings.provider))
+        return _construct_evaluator(eval_settings, names[0], settings)
+    return _construct_evaluator(
+        eval_settings,
+        _normalize_backend(eval_settings.provider),
+        settings,
+    )
 
 
 class EvaluatorFactory:
     """按配置创建 BaseEvaluator 实例的工厂入口。"""
 
-    _constructor: Callable[[EvaluationSettings], BaseEvaluator] = _default_constructor
+    _constructor: Callable[[Settings], BaseEvaluator] = _default_constructor
 
     @classmethod
     def create(cls, settings: Settings) -> BaseEvaluator:
         """从 Settings 读取 evaluation 配置并创建评估器。"""
-        return cls._constructor(settings.evaluation)
+        return cls._constructor(settings)
 
     @classmethod
-    def set_constructor(cls, constructor: Callable[[EvaluationSettings], BaseEvaluator]) -> None:
+    def set_constructor(cls, constructor: Callable[[Settings], BaseEvaluator]) -> None:
         """测试专用：替换默认构造逻辑。"""
         cls._constructor = constructor
 
