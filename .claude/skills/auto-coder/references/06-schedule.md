@@ -151,7 +151,7 @@
 | I2 | E2E：Dashboard 冒烟测试 | [x] | 2026-09-03 | 六页面 AppTest 有数据渲染 + app.py 入口，7个E2E测试 |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [x] | 2026-09-03 | README 六章节 + Copilot/Claude MCP 示例 + 3个单元测试 |
 | I4 | 清理接口一致性（契约测试补齐） | [x] | 2026-09-03 | VectorStore delete_by_metadata + Reranker/Evaluator 边界 + DocumentManager 空参，23个单元测试 |
-| I5 | 全链路 E2E 验收 | [ ] | | |
+| I5 | 全链路 E2E 验收 | [x] | 2026-09-03 | ingest→query→Dashboard 追踪→evaluate 隔离走通 + pytest 全绿，1个E2E测试 |
 
 ---
 
@@ -167,8 +167,8 @@
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 5 | 100% |
-| 阶段 I | 5 | 4 | 80% |
-| **总计** | **71** | **70** | **99%** |
+| 阶段 I | 5 | 5 | 100% |
+| **总计** | **71** | **71** | **100%** |
 
 
 ---
@@ -1322,7 +1322,7 @@
 - **验收标准**：`pytest -q` 全绿，且 contract tests 覆盖主要输入输出形状。
 - **测试方法**：`pytest -q`。
 
-### I5：全链路 E2E 验收
+### I5：全链路 E2E 验收 ✅
 - **目标**：执行完整的端到端验收流程：ingest → query via MCP → Dashboard 可视化 → evaluate。
 - **修改文件**：无新文件，验收已有功能
 - **验收标准**：
