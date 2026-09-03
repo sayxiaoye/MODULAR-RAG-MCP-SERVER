@@ -97,6 +97,63 @@ class InMemoryVectorStore(BaseVectorStore):
             )
         return self._validate_get_by_ids_results(results)
 
+    def get_by_metadata(
+        self,
+        filters: Mapping[str, Any] | None = None,
+        trace: Any | None = None,
+        *,
+        collection: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """按 metadata 等值条件读取；collection 限定逻辑集合。"""
+        results: list[dict[str, Any]] = []
+        for record in self._iter_scoped(collection):
+            if filters and not all(record["metadata"].get(k) == v for k, v in filters.items()):
+                continue
+            results.append(
+                {
+                    "id": record["id"],
+                    "text": record["text"],
+                    "metadata": dict(record["metadata"]),
+                }
+            )
+        return self._validate_get_by_ids_results(results)
+
+    def delete_by_metadata(
+        self,
+        filters: Mapping[str, Any],
+        trace: Any | None = None,
+        *,
+        collection: str | None = None,
+    ) -> int:
+        """按 metadata 批量删除；空 filter 拒绝，避免误删全库。"""
+        if not filters:
+            raise VectorStoreError("delete_by_metadata 的 filter 不能为空")
+        remaining: dict[str, dict[str, Any]] = {}
+        deleted = 0
+        scoped_ids = {record["id"] for record in self._iter_scoped(collection)}
+        for record_id, record in self._records.items():
+            if record_id not in scoped_ids:
+                remaining[record_id] = record
+                continue
+            if all(record["metadata"].get(k) == v for k, v in filters.items()):
+                deleted += 1
+                continue
+            remaining[record_id] = record
+        self._records = remaining
+        return deleted
+
+    def _iter_scoped(self, collection: str | None) -> list[dict[str, Any]]:
+        """collection 非空时只遍历该逻辑集合内的记录。"""
+        records = list(self._records.values())
+        if not collection:
+            return records
+        name = collection.strip()
+        return [
+            record
+            for record in records
+            if str(record["metadata"].get("collection") or "") == name
+        ]
+
 
 def _cosine_similarity(a: Sequence[float], b: Sequence[float]) -> float:
     """计算两向量余弦相似度，供 Fake 检索排序。"""
@@ -198,6 +255,95 @@ class TestVectorStoreContract:
         assert results[0]["id"] == "chunk-001"
         assert results[0]["text"] == "Azure 配置指南"
         assert results[0]["metadata"]["source_path"] == "guide.pdf"
+
+    def test_empty_upsert_raises(self) -> None:
+        """空 records 违反 upsert 契约，应拒绝写入。"""
+        store = InMemoryVectorStore(load_settings().vector_store)
+        with pytest.raises(VectorStoreError, match="records 不能为空"):
+            store.upsert([])
+
+    def test_invalid_top_k_raises(self) -> None:
+        """top_k <= 0 不是合法检索形状。"""
+        store = InMemoryVectorStore(load_settings().vector_store)
+        store.upsert(
+            [
+                {
+                    "id": "c1",
+                    "text": "t",
+                    "metadata": {},
+                    "dense_vector": [1.0],
+                }
+            ]
+        )
+        with pytest.raises(VectorStoreError, match="top_k"):
+            store.query([1.0], top_k=0)
+
+
+@pytest.mark.unit
+class TestVectorStoreDeleteByMetadata:
+    """I4：delete_by_metadata 空 filter、零命中、集合隔离与删除计数。"""
+
+    def _store_with_two_collections(self) -> InMemoryVectorStore:
+        store = InMemoryVectorStore(load_settings().vector_store)
+        store.upsert(
+            [
+                {
+                    "id": "keep-a",
+                    "text": "保留 A",
+                    "metadata": {"source_path": "keep.pdf", "collection": "docs"},
+                    "dense_vector": [1.0, 0.0],
+                },
+                {
+                    "id": "drop-a",
+                    "text": "删除 A",
+                    "metadata": {"source_path": "drop.pdf", "collection": "docs"},
+                    "dense_vector": [0.0, 1.0],
+                },
+                {
+                    "id": "other-drop",
+                    "text": "另一集合同名源",
+                    "metadata": {"source_path": "drop.pdf", "collection": "other"},
+                    "dense_vector": [0.0, 1.0],
+                },
+            ]
+        )
+        return store
+
+    def test_empty_filters_raise(self) -> None:
+        """空 filter 禁止全量删除，与 ChromaStore 契约一致。"""
+        store = self._store_with_two_collections()
+        with pytest.raises(VectorStoreError, match="filter 不能为空"):
+            store.delete_by_metadata({})
+
+    def test_no_match_returns_zero(self) -> None:
+        """无匹配记录时应返回 0，且不改动已有数据。"""
+        store = self._store_with_two_collections()
+        deleted = store.delete_by_metadata({"source_path": "missing.pdf"})
+        assert deleted == 0
+        assert len(store.get_by_ids(["keep-a", "drop-a", "other-drop"])) == 3
+
+    def test_deletes_matching_records_and_returns_count(self) -> None:
+        """命中记录应删除，返回条数，query 不再命中。"""
+        store = self._store_with_two_collections()
+        deleted = store.delete_by_metadata({"source_path": "drop.pdf"})
+        assert deleted == 2
+        remaining = store.get_by_ids(["keep-a", "drop-a", "other-drop"])
+        assert [item["id"] for item in remaining] == ["keep-a"]
+        hits = store.query([0.0, 1.0], top_k=5)
+        assert [item["id"] for item in hits] == ["keep-a"]
+
+    def test_collection_scopes_delete(self) -> None:
+        """collection 参数只删除该逻辑集合内的匹配记录。"""
+        store = self._store_with_two_collections()
+        deleted = store.delete_by_metadata(
+            {"source_path": "drop.pdf"},
+            collection="docs",
+        )
+        assert deleted == 1
+        assert store.get_by_ids(["drop-a"]) == []
+        leftover = store.get_by_ids(["other-drop"])
+        assert len(leftover) == 1
+        assert leftover[0]["metadata"]["collection"] == "other"
 
 
 @pytest.mark.unit

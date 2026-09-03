@@ -150,7 +150,7 @@
 | I1 | E2E：MCP Client 侧调用模拟 | [x] | 2026-09-03 | 子进程 Stdio tools/list + query_knowledge_hub citations，2个E2E测试 |
 | I2 | E2E：Dashboard 冒烟测试 | [x] | 2026-09-03 | 六页面 AppTest 有数据渲染 + app.py 入口，7个E2E测试 |
 | I3 | 完善 README（运行说明 + MCP + Dashboard） | [x] | 2026-09-03 | README 六章节 + Copilot/Claude MCP 示例 + 3个单元测试 |
-| I4 | 清理接口一致性（契约测试补齐） | [ ] | | |
+| I4 | 清理接口一致性（契约测试补齐） | [x] | 2026-09-03 | VectorStore delete_by_metadata + Reranker/Evaluator 边界 + DocumentManager 空参，23个单元测试 |
 | I5 | 全链路 E2E 验收 | [ ] | | |
 
 ---
@@ -167,8 +167,8 @@
 | 阶段 F | 5 | 5 | 100% |
 | 阶段 G | 6 | 6 | 100% |
 | 阶段 H | 5 | 5 | 100% |
-| 阶段 I | 5 | 3 | 60% |
-| **总计** | **71** | **69** | **97%** |
+| 阶段 I | 5 | 4 | 80% |
+| **总计** | **71** | **70** | **99%** |
 
 
 ---
@@ -1313,7 +1313,7 @@
   - **常见问题**：API Key 配置、依赖安装、连接问题排查
 - **测试方法**：按 README 手动走一遍。
 
-### I4：清理接口一致性（契约测试补齐）
+### I4：清理接口一致性（契约测试补齐） ✅
 - **目标**：为关键抽象（VectorStore / Reranker / Evaluator / DocumentManager）补齐契约测试。
 - **修改文件**：
   - `tests/unit/test_vector_store_contract.py`（补齐 delete_by_metadata 边界）

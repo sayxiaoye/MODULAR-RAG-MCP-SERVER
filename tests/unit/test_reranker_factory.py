@@ -150,3 +150,80 @@ class TestRerankerFactoryRouting:
         reranker = NoneReranker()
         with pytest.raises(RerankerError, match="缺少字段"):
             reranker.rerank("q", [{"id": "only-id"}])
+
+    def test_blank_query_raises(self) -> None:
+        """空白 query 不是合法精排输入。"""
+        reranker = NoneReranker()
+        with pytest.raises(RerankerError, match="query"):
+            reranker.rerank("   ", _sample_candidates())
+
+    def test_candidate_not_mapping_raises(self) -> None:
+        """候选必须是 mapping，否则无法校验 id/score/text/metadata。"""
+        reranker = NoneReranker()
+        with pytest.raises(RerankerError, match="必须是 mapping"):
+            reranker.rerank("q", ["not-a-dict"])  # type: ignore[list-item]
+
+    def test_candidate_metadata_not_mapping_raises(self) -> None:
+        """metadata 必须是 mapping，与 RetrievalResult 契约对齐。"""
+        reranker = NoneReranker()
+        with pytest.raises(RerankerError, match="metadata"):
+            reranker.rerank(
+                "q",
+                [
+                    {
+                        "id": "a",
+                        "score": 0.1,
+                        "text": "t",
+                        "metadata": "bad",
+                    }
+                ],
+            )
+
+    def test_disabled_ignores_registered_provider(self) -> None:
+        """enabled=false 时即使已注册自定义 provider 也必须回退 NoneReranker。"""
+        register_reranker("reverse", ReverseReranker)
+        base = load_settings()
+        settings = Settings(
+            llm=base.llm,
+            embedding=base.embedding,
+            vector_store=base.vector_store,
+            retrieval=base.retrieval,
+            rerank=RerankSettings(
+                enabled=False,
+                provider="reverse",
+                model="m",
+                top_k=5,
+            ),
+            evaluation=base.evaluation,
+            observability=base.observability,
+            ingestion=base.ingestion,
+            vision_llm=base.vision_llm,
+        )
+        reranker = RerankerFactory.create(settings)
+        assert isinstance(reranker, NoneReranker)
+
+    def test_provider_none_is_case_insensitive(self) -> None:
+        """provider 大小写不影响 none 回退。"""
+        base = load_settings()
+        settings = Settings(
+            llm=base.llm,
+            embedding=base.embedding,
+            vector_store=base.vector_store,
+            retrieval=base.retrieval,
+            rerank=RerankSettings(
+                enabled=True,
+                provider="NONE",
+                model="m",
+                top_k=5,
+            ),
+            evaluation=base.evaluation,
+            observability=base.observability,
+            ingestion=base.ingestion,
+            vision_llm=base.vision_llm,
+        )
+        assert isinstance(RerankerFactory.create(settings), NoneReranker)
+
+    def test_register_blank_name_raises(self) -> None:
+        """空 Provider 名不能写入注册表。"""
+        with pytest.raises(RerankerFactoryError, match="不能为空"):
+            register_reranker("  ", ReverseReranker)

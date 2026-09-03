@@ -359,3 +359,15 @@ class TestDocumentManager:
         manager.delete_document("a.pdf", "docs")
         assert bm25.last_doc_hash == "sha-a"
         assert bm25.removed == [("a.pdf", None)]
+
+    def test_delete_blank_source_path_raises(self) -> None:
+        """空 source_path 禁止删除，避免误清整库。"""
+        manager = DocumentManager(FakeChroma(), FakeBM25(), FakeImageStorage(), FakeIntegrity())
+        with pytest.raises(DocumentManagerError, match="source_path"):
+            manager.delete_document("  ", "docs")
+
+    def test_delete_blank_collection_raises(self) -> None:
+        """空 collection 禁止删除，避免跨集合误删。"""
+        manager = DocumentManager(FakeChroma(), FakeBM25(), FakeImageStorage(), FakeIntegrity())
+        with pytest.raises(DocumentManagerError, match="collection"):
+            manager.delete_document("a.pdf", "")

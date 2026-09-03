@@ -72,6 +72,55 @@ class TestCustomEvaluatorMetrics:
         with pytest.raises(EvaluatorError, match="golden_ids"):
             evaluator.evaluate("q", ["a"], [])
 
+    def test_blank_query_raises(self) -> None:
+        """空白 query 不是合法评估输入。"""
+        evaluator = CustomEvaluator()
+        with pytest.raises(EvaluatorError, match="query"):
+            evaluator.evaluate("  ", ["a"], ["a"])
+
+    def test_empty_retrieved_ids_is_miss(self) -> None:
+        """无检索结果时 hit_rate/mrr 均为 0，形状仍是 float 指标字典。"""
+        evaluator = CustomEvaluator()
+        metrics = evaluator.evaluate("q", [], ["gold-1"])
+        assert metrics == {"hit_rate": 0.0, "mrr": 0.0}
+
+    def test_retrieved_ids_must_be_list(self) -> None:
+        """retrieved_ids 必须是 list，避免误传入 tuple/set 导致排名失真。"""
+        evaluator = CustomEvaluator()
+        with pytest.raises(EvaluatorError, match="retrieved_ids"):
+            evaluator.evaluate("q", ("a",), ["a"])  # type: ignore[arg-type]
+
+    def test_blank_retrieved_id_raises(self) -> None:
+        """空字符串 chunk_id 不是合法检索输出。"""
+        evaluator = CustomEvaluator()
+        with pytest.raises(EvaluatorError, match="retrieved_ids"):
+            evaluator.evaluate("q", ["  "], ["gold"])
+
+    def test_blank_golden_id_raises(self) -> None:
+        """空字符串不能作为 golden chunk_id。"""
+        evaluator = CustomEvaluator()
+        with pytest.raises(EvaluatorError, match="golden_ids"):
+            evaluator.evaluate("q", ["a"], [""])
+
+    def test_empty_metrics_config_returns_all(self) -> None:
+        """metrics=[] 视为未筛选，应返回 hit_rate 与 mrr。"""
+        evaluator = CustomEvaluator(
+            EvaluationSettings(enabled=True, provider="custom", metrics=[])
+        )
+        metrics = evaluator.evaluate("q", ["gold"], ["gold"])
+        assert set(metrics) == {"hit_rate", "mrr"}
+
+    def test_first_of_multiple_golden_sets_mrr(self) -> None:
+        """多个 golden 时 MRR 取检索列表中最早命中的倒数排名。"""
+        evaluator = CustomEvaluator()
+        metrics = evaluator.evaluate(
+            query="q",
+            retrieved_ids=["x", "gold-b", "gold-a"],
+            golden_ids=["gold-a", "gold-b"],
+        )
+        assert metrics["hit_rate"] == 1.0
+        assert metrics["mrr"] == 0.5
+
 
 @pytest.mark.unit
 class TestEvaluatorFactoryRouting:
@@ -102,3 +151,45 @@ class TestEvaluatorFactoryRouting:
         )
         with pytest.raises(EvaluatorFactoryError, match="unknown_eval_xyz"):
             EvaluatorFactory.create(settings)
+
+    def test_blank_provider_raises(self) -> None:
+        """provider 为空无法路由到注册表。"""
+        base = load_settings()
+        settings = Settings(
+            llm=base.llm,
+            embedding=base.embedding,
+            vector_store=base.vector_store,
+            retrieval=base.retrieval,
+            rerank=base.rerank,
+            evaluation=EvaluationSettings(
+                enabled=True,
+                provider="  ",
+                metrics=["hit_rate"],
+            ),
+            observability=base.observability,
+            ingestion=base.ingestion,
+            vision_llm=base.vision_llm,
+        )
+        with pytest.raises(EvaluatorFactoryError, match="未知"):
+            EvaluatorFactory.create(settings)
+
+    def test_disabled_still_creates_custom(self) -> None:
+        """enabled=false 不改变工厂路由，仍返回已配置的 CustomEvaluator。"""
+        base = load_settings()
+        settings = Settings(
+            llm=base.llm,
+            embedding=base.embedding,
+            vector_store=base.vector_store,
+            retrieval=base.retrieval,
+            rerank=base.rerank,
+            evaluation=EvaluationSettings(
+                enabled=False,
+                provider="custom",
+                metrics=["hit_rate", "mrr"],
+            ),
+            observability=base.observability,
+            ingestion=base.ingestion,
+            vision_llm=base.vision_llm,
+        )
+        evaluator = EvaluatorFactory.create(settings)
+        assert isinstance(evaluator, CustomEvaluator)
